@@ -1,0 +1,3 @@
+{
+  "extensions": ["extensions.commands", "extensions.setup_db"]
+}

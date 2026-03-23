@@ -1,0 +1,4 @@
+discord.py=>2.6.4
+load_dotenv=>0.1.0
+importlib=>1.0.4
+aiomysql=>0.3.2
