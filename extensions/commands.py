@@ -18,9 +18,9 @@ class CommandsCog(commands.Cog):
         '''pings the bot'''
         await ctx.reply("`pong`", mention_author = False)
 
-    @commands.hybrid_command(name = "closedb", description = "closes the db connection")
+    @commands.hybrid_command(name = "close_db", description = "closes the db connection")
     @commands.is_owner()
-    async def closedb(self, ctx):
+    async def close_db(self, ctx):
         '''closes the db connection'''
         pool = await get_pool()
         if pool:
@@ -28,16 +28,6 @@ class CommandsCog(commands.Cog):
             await pool.wait_closed()
             print("DB connection closed")
         await ctx.reply("`DB connection closed`", mention_author = False)
-
-    @commands.hybrid_command(name = "testinsert")
-    async def testinsert(self, ctx):
-        now = datetime.now()
-        await run_transaction([
-            ("INSERT INTO cards (fd_type, fd_bundle, fd_name, fd_member, fd_image)"
-            "VALUES ('TYPE', 'BUNDLE', 'NAME', 'MEMBER', 'images/Chamen.png')",
-             (now)
-            )
-        ])
 
 async def setup(bot):
     await bot.add_cog(CommandsCog(bot))
