@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import constants
 import helpers.queries
 import helpers.util
-from db import init_db, setup_db
+from db import init_db, setup_db, get_pool
 
 load_dotenv()
 token = os.getenv(constants.TOKEN)
@@ -26,15 +26,15 @@ async def on_ready():
     activity = discord.Activity(type = discord.ActivityType.listening, name = constants.ACTIVITY)
     await cardBot.change_presence(status = discord.Status.online, activity = activity)
 
-    await init_db()
-    #await setup_db()
-
     for ext in helpers.util.load_cogs():
         try:
             await cardBot.load_extension(ext)
             print(f"Loaded {ext}")
         except Exception as e:
             print(f"Failed to load {ext}: {e}")
+
+    await init_db()
+    await helpers.util.get_cards()
 
     print("Card bot online")
 
@@ -43,7 +43,7 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         await ctx.reply("`Not a command`", mention_author = False)
     elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.reply("Argument missing, please check the correct syntax in `char help [command]`", mention_author = False)
+        await ctx.reply("Argument missing, please check the correct syntax in `bc help [command]`", mention_author = False)
     else:
         await ctx.reply("`Exception caught!`", mention_author = False)
         print(f"Exception: {error}")
@@ -56,7 +56,6 @@ async def sync(ctx):
     await cardBot.tree.sync()
     await ctx.reply("`Commands synced`", mention_author = False)
     print("Command: sync")
-
 
 @cardBot.command(hidden = True)
 @commands.is_owner()
@@ -74,7 +73,6 @@ async def reload_extension(ctx, extension):
         print(f"Exception: {e}")
     print("Command: reload_extension")
 
-
 @cardBot.command(hidden = True)
 @commands.is_owner()
 async def reload_helpers(ctx):
@@ -89,9 +87,29 @@ async def reload_helpers(ctx):
     print("Command: reload_helpers")
 
 @cardBot.command(hidden = True)
+@commands.is_owner()
+async def create_tables(ctx):
+    await setup_db()
+    await ctx.reply("`Initial tables created`")
+    print("Commands: create_tables")
+
+
+@cardBot.command(hidden = True)
+@commands.is_owner()
+async def close_db(ctx):
+    pool = await get_pool()
+    if pool:
+        pool.close()
+        await pool.wait_closed()
+        print("DB connection closed")
+    await ctx.reply("`DB connection closed`", mention_author = False)
+
+@cardBot.command(hidden = True)
 async def sql_run(ctx, filepath):
     if helpers.util.check_perms(ctx):
         await helpers.util.run_sql(filepath)
+    else:
+        await ctx.reply("`Missing permissions`", mention_author = False)
     print("Command: sql_run")
 ### --------------------- BOT COMMANDS END --------------------- ###
 

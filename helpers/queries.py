@@ -42,4 +42,6 @@ INIT_TABLES = """
     ADD CONSTRAINT fk_fav_id FOREIGN KEY (fd_fav) REFERENCES tb_owners(fd_display);
 """
 
-ID_CHECK = "SELECT 1 FROM tb_owners WHERE fd_card = %s LIMIT 1"  
+ID_CHECK = "SELECT 1 FROM tb_owners WHERE fd_card = %s LIMIT 1" 
+GET_USERS = "SELECT * FROM tb_users" 
+GET_CARDS = "SELECT * FROM tb_cards"

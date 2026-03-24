@@ -2,13 +2,19 @@ import json
 import os
 import secrets
 import string
+import aiomysql
 import aiofiles
 import constants
 
 from db import get_pool
-from helpers.queries import ID_CHECK
+from helpers.queries import ID_CHECK, GET_USERS, GET_CARDS
 
 COGS_FILE = "cogs.json"
+CACHE_USERS_DICT = {}
+CACHE_USERS_LIST = []
+CACHE_CARDS_DICT = {}
+CACHE_CARDS_LIST = []
+CACHE_CARDS_NORMAL = []
 
 
 def load_cogs() -> list[str]:
@@ -44,21 +50,38 @@ def check_perms(ctx):
     else:
         return False
 
-async def run_transaction(queries):
+async def get_data(query, params = None):
     pool = await get_pool()
 
     async with pool.acquire() as conn:
-        async with conn.cursor() as cursor:
-            try:
-                await conn.begin()
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            if not params:
+                await cursor.execute(query)
+            else:
+                await cursor.execute(query, params)
+            rows = await cursor.fetchall()
+            return rows
+    
+async def check_user(user):
+    global CACHE_USERS_DICT, CACHE_USERS_LIST
+    user_id = str(user)
 
-                for query, params in queries:
-                    await cursor.execute(query, params)
+    if user_id in CACHE_USERS_DICT:
+        return True
 
-                await conn.commit()
-            except:
-                await conn.rollback()
-                raise
+    users = await get_data(GET_USERS)
+    CACHE_USERS_DICT = {row["id"]: row for row in users}
+    CACHE_USERS_LIST = list(CACHE_USERS_DICT.values())
+
+    return user_id in CACHE_USERS_DICT
+
+async def get_cards():
+    global CACHE_CARDS_DICT, CACHE_CARDS_LIST, CACHE_CARDS_NORMAL
+    cards = await get_data(GET_CARDS)
+    CACHE_CARDS_DICT = {row["id"]: row for row in cards}
+    CACHE_CARDS_LIST = list(CACHE_CARDS_DICT.values())
+    CACHE_CARDS_NORMAL = [card for card in CACHE_CARDS_LIST if card["fd_type"] == "normal"]
+    print("Cards cached")
 
 async def generate_card_id(length = 8):
     chars = string.ascii_uppercase + string.digits
@@ -85,3 +108,6 @@ async def run_sql(path):
                 await cursor.execute(stmt)
 
         await conn.commit()
+
+def one_percent_roll():
+    return secrets.randbelow(100) == 0
