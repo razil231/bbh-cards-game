@@ -1,4 +1,5 @@
 import aiomysql
+from helpers.queries import INIT_TABLES
 
 db_pool = None
 
@@ -13,5 +14,16 @@ async def init_db():
         autocommit = False
     )
 
+    print("DB initialization done")
+
 async def get_pool():
     return db_pool
+
+async def setup_db():
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute(INIT_TABLES)
+
+    print("DB setup done")
