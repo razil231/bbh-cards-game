@@ -6,7 +6,8 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 import constants
-import helpers
+import helpers.queries
+import helpers.util
 from db import init_db, setup_db
 
 load_dotenv()
@@ -26,7 +27,7 @@ async def on_ready():
     await cardBot.change_presence(status = discord.Status.online, activity = activity)
 
     await init_db()
-    await setup_db()
+    #await setup_db()
 
     for ext in helpers.util.load_cogs():
         try:
@@ -51,7 +52,7 @@ async def on_command_error(ctx, error):
 ### -------------------- BOT COMMANDS START -------------------- ###
 @cardBot.command(hidden = True)
 @commands.is_owner()
-async def sync(ctx: commands.Context):
+async def sync(ctx):
     await cardBot.tree.sync()
     await ctx.reply("`Commands synced`", mention_author = False)
     print("Command: sync")
@@ -59,7 +60,7 @@ async def sync(ctx: commands.Context):
 
 @cardBot.command(hidden = True)
 @commands.is_owner()
-async def reload_extension(ctx: commands.Context, extension: str):
+async def reload_extension(ctx, extension):
     try:
         if extension in cardBot.extensions:
             await cardBot.reload_extension(extension)
@@ -76,7 +77,7 @@ async def reload_extension(ctx: commands.Context, extension: str):
 
 @cardBot.command(hidden = True)
 @commands.is_owner()
-async def reload_helpers(ctx: commands.Context):
+async def reload_helpers(ctx):
     try:
         importlib.reload(constants)
         importlib.reload(helpers.queries)
@@ -86,6 +87,12 @@ async def reload_helpers(ctx: commands.Context):
         await ctx.reply("`Exception caught!`", mention_author = False)
         print(f"Exception: {e}")
     print("Command: reload_helpers")
+
+@cardBot.command(hidden = True)
+async def sql_run(ctx, filepath):
+    if helpers.util.check_perms(ctx):
+        await helpers.util.run_sql(filepath)
+    print("Command: sql_run")
 ### --------------------- BOT COMMANDS END --------------------- ###
 
 cardBot.run(token)

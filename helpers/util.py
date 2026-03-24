@@ -2,6 +2,8 @@ import json
 import os
 import secrets
 import string
+import aiofiles
+import constants
 
 from db import get_pool
 from helpers.queries import ID_CHECK
@@ -31,6 +33,17 @@ def save_cog(extension: str):
         with open(COGS_FILE, "w", encoding = "utf-8") as f:
             json.dump(data, f, indent = 4)
 
+def check_perms(ctx):
+    perm_roles = [constants.BBH_ABSCBN, constants.BBH_DIREK, constants.BBH_MANAGER, constants.TEST_ADMIN]
+
+    if not ctx.author.roles:
+        return False
+    
+    if any(role.id in perm_roles for role in ctx.author.roles):
+        return True
+    else:
+        return False
+
 async def run_transaction(queries):
     pool = await get_pool()
 
@@ -59,3 +72,16 @@ async def generate_card_id(length = 8):
                 await cursor.execute(ID_CHECK, (code,))
                 if not await cursor.fetchone():
                     return code
+                
+async def run_sql(path):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            async with aiofiles.open(path, mode = "r") as f:
+                sql_content = await f.read()
+
+            statements = [stmt.strip() for stmt in sql_content.split(";") if stmt.strip()]
+            for stmt in statements:
+                await cursor.execute(stmt)
+
+        await conn.commit()
