@@ -35,6 +35,7 @@ async def on_ready():
 
     await init_db()
     await helpers.util.get_cards()
+    await helpers.util.get_owners()
 
     print("Card bot online")
 
