@@ -1,3 +1,5 @@
+from enum import Enum
+
 ### GENERAL ###
 TOKEN = "TOKEN"
 PREFIX = "bc "
@@ -19,3 +21,22 @@ COLOR_MIKHALITES = 0xFF_18_18
 COLOR_STARS = 0xFF_13_F0
 COLOR_AMITIES = 0x04_77_BF
 COLOR_SHINIES = 0x8A_00_C4
+
+### Commands ###
+class CooldownCommand(Enum):
+    CARD = "card",
+    DAILY = "daily",
+    UPGRADE = "upgrade",
+    ASCEND = "ascend"
+
+### COOLDOWN ###
+CD_CARD = 10
+CD_DAILY = 86_400
+CD_UPGRADE = 1
+CD_ASCEND = 3_600
+
+### EMOTES ###
+STAR_LIGHT = "<:star_light:1486615221509554246>"
+STAR_DARK = "<:star_dark:1486615219504677035>"
+TYPE_NORMAL = "<:normal:1486692328499581009>"
+TYPE_SIGNED = "<:signed:1486692326523797695>"
