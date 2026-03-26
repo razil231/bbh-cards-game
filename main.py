@@ -41,7 +41,20 @@ async def on_ready():
 
 @cardBot.event
 async def on_command_error(ctx, error):
-    if isinstance(error, commands.CommandNotFound):
+    if isinstance(error, commands.CommandOnCooldown):
+        retry = error.retry_after
+
+        hours = int(retry // 3_600)
+        mins = int((retry % 3_600) // 60)
+        secs = int(retry % 60)
+
+        parts = []
+        if hours: parts.append(f"{hours:02}:")
+        if mins: parts.append(f"{mins:02}:")
+        parts.append(f"{secs:02}s")
+
+        await ctx.reply(f"Command on cooldown. Try again in {"".join(parts)}")
+    elif isinstance(error, commands.CommandNotFound):
         await ctx.reply("`Not a command`", mention_author = False)
     elif isinstance(error, commands.MissingRequiredArgument):
         await ctx.reply("Argument missing, please check the correct syntax in `bc help [command]`", mention_author = False)
@@ -81,6 +94,9 @@ async def reload_helpers(ctx):
         importlib.reload(constants)
         importlib.reload(helpers.queries)
         importlib.reload(helpers.util)
+
+        await helpers.util.get_cards()
+        await helpers.util.get_owners()
         await ctx.reply("`Helpers reloaded`", mention_author = False)
     except Exception as e:
         await ctx.reply("`Exception caught!`", mention_author = False)
@@ -93,7 +109,6 @@ async def create_tables(ctx):
     await setup_db()
     await ctx.reply("`Initial tables created`")
     print("Commands: create_tables")
-
 
 @cardBot.command(hidden = True)
 @commands.is_owner()
@@ -111,6 +126,7 @@ async def sql_run(ctx, filepath):
         await helpers.util.run_sql(filepath)
     else:
         await ctx.reply("`Missing permissions`", mention_author = False)
+    await ctx.reply("`Execution successful`")
     print("Command: sql_run")
 ### --------------------- BOT COMMANDS END --------------------- ###
 
