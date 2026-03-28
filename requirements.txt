@@ -1,5 +1,7 @@
 discord.py=>2.6.4
 load_dotenv=>0.1.0
 importlib=>1.0.4
+aiohttp=>3.13.3
 aiomysql=>0.3.2
 aiofiles=>25.1.0
+pillow=>12.1.1
