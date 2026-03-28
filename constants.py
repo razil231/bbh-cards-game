@@ -32,7 +32,7 @@ class CooldownCommand(Enum):
 ### COOLDOWN ###
 CD_CARD = 10
 CD_DAILY = 86_400
-CD_UPGRADE = 1
+CD_UPGRADE = 30
 CD_ASCEND = 3_600
 
 ### EMOTES ###
@@ -40,3 +40,12 @@ STAR_LIGHT = "<:star_light:1486615221509554246>"
 STAR_DARK = "<:star_dark:1486615219504677035>"
 TYPE_NORMAL = "<:normal:1486692328499581009>"
 TYPE_SIGNED = "<:signed:1486692326523797695>"
+BLOOM = "<:blooms:1487470955730309291>"
+BLOOMCENSION = "<:bloomcension:1487470953343484004>"
+BLOOMSPIN = "<a:bloomspin:1486591216647798834>"
+
+### MESSAGES ###
+CONFIRM_UPGRADE = "Are you sure you want to upgrade **`{0}`**?\n-# This will consume copies of your card"
+
+### IMAGES ###
+IMAGE_HOST = "https://wangsi231.x02.me/i/{0}"

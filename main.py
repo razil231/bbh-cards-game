@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 import constants
 import helpers.queries
 import helpers.util
+import views.collection_view
+import views.confirm_view
 from db import init_db, setup_db, get_pool
 
 load_dotenv()
@@ -65,43 +67,60 @@ async def on_command_error(ctx, error):
 
 ### -------------------- BOT COMMANDS START -------------------- ###
 @cardBot.command(hidden = True)
-@commands.is_owner()
 async def sync(ctx):
-    await cardBot.tree.sync()
-    await ctx.reply("`Commands synced`", mention_author = False)
+    if helpers.util.check_perms(ctx):
+        await cardBot.tree.sync()
+        await ctx.reply("`Commands synced`", mention_author = False)
+    else:
+        await ctx.reply("`Missing permissions`", mention_author = False)
     print("Command: sync")
 
 @cardBot.command(hidden = True)
-@commands.is_owner()
 async def reload_extension(ctx, extension):
-    try:
-        if extension in cardBot.extensions:
-            await cardBot.reload_extension(extension)
-            await ctx.reply(f"`Extension reloaded: {extension}`", mention_author = False)
-        else:
-            await cardBot.load_extension(extension)
-            helpers.util.save_cog(extension)
-            await ctx.reply(f"`Extension loaded: {extension}`", mention_author = False)
-    except Exception as e:
-        await ctx.reply("`Exception caught!`", mention_author = False)
-        print(f"Exception: {e}")
+    if helpers.util.check_perms(ctx):
+        try:
+            if extension in cardBot.extensions:
+                await cardBot.reload_extension(extension)
+                await ctx.reply(f"`Extension reloaded: {extension}`", mention_author = False)
+            else:
+                await cardBot.load_extension(extension)
+                helpers.util.save_cog(extension)
+                await ctx.reply(f"`Extension loaded: {extension}`", mention_author = False)
+        except Exception as e:
+            await ctx.reply("`Exception caught!`", mention_author = False)
+            print(f"Exception: {e}")
+    else:
+        await ctx.reply("`Missing permissions`", mention_author = False)
     print("Command: reload_extension")
 
 @cardBot.command(hidden = True)
-@commands.is_owner()
 async def reload_helpers(ctx):
-    try:
-        importlib.reload(constants)
-        importlib.reload(helpers.queries)
-        importlib.reload(helpers.util)
+    if helpers.util.check_perms(ctx):
+        try:
+            importlib.reload(constants)
+            importlib.reload(helpers.queries)
+            importlib.reload(helpers.util)
+            importlib.reload(views.collection_view)
+            importlib.reload(views.confirm_view)
 
-        await helpers.util.get_cards()
-        await helpers.util.get_owners()
-        await ctx.reply("`Helpers reloaded`", mention_author = False)
-    except Exception as e:
-        await ctx.reply("`Exception caught!`", mention_author = False)
-        print(f"Exception: {e}")
+            await helpers.util.get_cards()
+            await helpers.util.get_owners()
+            await ctx.reply("`Helpers reloaded`", mention_author = False)
+        except Exception as e:
+            await ctx.reply("`Exception caught!`", mention_author = False)
+            print(f"Exception: {e}")
+    else:
+        await ctx.reply("`Missing permissions`", mention_author = False)
     print("Command: reload_helpers")
+
+@cardBot.command(hidden = True)
+async def sql_run(ctx, filepath):
+    if helpers.util.check_perms(ctx):
+        await helpers.util.run_sql(filepath)
+        await ctx.reply("`Execution successful`")
+    else:
+        await ctx.reply("`Missing permissions`", mention_author = False)
+    print("Command: sql_run")
 
 @cardBot.command(hidden = True)
 @commands.is_owner()
@@ -120,14 +139,6 @@ async def close_db(ctx):
         print("DB connection closed")
     await ctx.reply("`DB connection closed`", mention_author = False)
 
-@cardBot.command(hidden = True)
-async def sql_run(ctx, filepath):
-    if helpers.util.check_perms(ctx):
-        await helpers.util.run_sql(filepath)
-    else:
-        await ctx.reply("`Missing permissions`", mention_author = False)
-    await ctx.reply("`Execution successful`")
-    print("Command: sql_run")
 ### --------------------- BOT COMMANDS END --------------------- ###
 
 cardBot.run(token)

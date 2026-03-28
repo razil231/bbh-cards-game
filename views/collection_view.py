@@ -29,7 +29,7 @@ class CardSelect(discord.ui.Select):
         selected_id = self.values[0]
         card = next(c for c in self.cards if c["fd_display"] == selected_id)
 
-        embed, file = card_info_embed(card)
+        embed, file = await card_info_embed(card)
         await interaction.response.send_message(embed = embed, file = file)
 
 

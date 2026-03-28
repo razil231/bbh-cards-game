@@ -1,14 +1,18 @@
 import discord
 import json
 import os
+import hashlib
 import secrets
 import string
+import aiohttp
 import aiomysql
 import aiofiles
 import constants
 
 from datetime import datetime
 from discord.ext import commands
+from PIL import Image
+from io import BytesIO
 from db import get_pool
 from helpers.queries import ID_CHECK, GET_USERS, GET_CARDS, GET_OWNERS, ADD_USER, ADD_OWNER, UPDATE_COPIES, UPGRADE_CARD
 
@@ -23,6 +27,12 @@ CACHE_CARDS_NORMAL = []
 CACHE_CARDS_SIGNED = []
 CACHE_CARDS_UPGRADE = {}
 CACHE_CARDS_COLLECTION = {}
+CACHE_IMAGES_MEMORY = {}
+
+CACHE_DIR = "cache/images"
+CACHE_MAX_MEMORY = 100
+
+os.makedirs(CACHE_DIR, exist_ok = True)
 
 BASE_COOLDOWNS = {
     constants.CooldownCommand.CARD: constants.CD_CARD,
@@ -54,6 +64,44 @@ def save_cog(extension: str):
         with open(COGS_FILE, "w", encoding = "utf-8") as f:
             json.dump(data, f, indent = 4)
 
+def get_cache(path):
+    filename = hashlib.md5(path.encode()).hexdigest() + ".png"
+    return os.path.join(CACHE_DIR, filename)
+
+def get_info(bot, command = None):
+    is_command = True
+
+    if not command:
+        is_command = False
+
+    embed = discord.Embed(
+        title = f"Help for {command}" if is_command else "Available commands",
+        color = 0xFF_FF_FF
+    )
+
+    if not is_command:
+        embed.add_field(name = "`bc help [command]`", value = "- shows all commands", inline = False)
+        embed.add_field(name = "`bc start`", value = "- initializes user profile", inline = False)
+        embed.add_field(name = "`bc profile [@user]`", value = "- shows the profile of a user", inline = False)
+        embed.add_field(name = "`bc card`", value = "- gets a card from the current pool", inline = False)
+        embed.add_field(name = "`bc cards [@user]`", value = "- shows card collection of a user", inline = False)
+        embed.add_field(name = "`bc upgrade <card id>`", value = "- upgrade a card to a higher rating", inline = False)
+        embed.set_footer(text = "\"bc help [command]\" for more info")
+    else:
+        cmd = bot.get_command(command)
+        if not cmd:
+            return None
+        
+        embed.add_field(name = cmd.extras.get("syntax"), value = f"- {cmd.callback.__doc__}", inline = False)
+
+        params = cmd.extras.get("args")
+        if params is not None:
+            embed.add_field(name = "Parameters:", value = params, inline = False)
+
+        embed.set_footer(text = "Slash commands are also available")
+
+    return embed
+
 def display_date(timestamp, format = "%A, %B %d, %Y %I:%M %p"):
     return timestamp.strftime(format)
 
@@ -67,6 +115,10 @@ def check_perms(ctx):
         return True
     else:
         return False
+
+def check_lock(user):
+    details = CACHE_USERS_DICT.get(str(user))
+    return details["fd_lock"] > 0
 
 def roll_with_multi(multi):
     base_rate = 0.01
@@ -149,9 +201,28 @@ def card_list_embed(user, cards, page, total):
     embed.set_footer(text = f"Page {page + 1}/{total}")
     return embed
 
-def card_info_embed(card):
+def get_profile_embed(user, details):
+    embed = discord.Embed(
+        title = f"{user.display_name}\'s Profile",
+        description = details["fd_desc"] if details["fd_desc"] is not None else "",
+        color = 0xFF_FF_FF
+    )
+    curr = f"- {details["fd_curr1"]} {constants.BLOOM}\n"
+    curr += f"- {details["fd_curr2"]} {constants.BLOOMCENSION}\n"
+    curr += f"- {details["fd_curr3"]} {constants.BLOOMSPIN}"
+
+    embed.set_thumbnail(url = user.display_avatar.url)
+    embed.add_field(name = "Boosts:", value = f"- __**Signed**__: *{details['fd_multi']:.2f}%* chances", inline = False)
+    embed.add_field(name = "Currency:", value = f"{curr}", inline = False)
+    embed.set_footer(text = f"Created: {display_date(details["fd_created"])}")
+
+    return embed
+
+async def card_info_embed(card):
     details = CACHE_CARDS_DICT.get(card["fd_card"])
     desc = f"{details["fd_bundle"]}\n{details['fd_member']}\n{details['fd_type']}"
+
+    file = await get_image_file(details["fd_image"])
 
     if details["fd_desc"]:
         desc += f"\n\n{details['fd_desc']}"
@@ -172,7 +243,7 @@ def card_info_embed(card):
     embed.add_field(name = "", value = f"Copies owned: {card["fd_dupes"]}\n{get_card_rating(card["fd_rating"])}", inline = False)
     embed.set_image(url = "attachment://card.png")
     embed.set_footer(text = f"Obtained: {display_date(card["fd_created"])}")
-    return embed, discord.File(details["fd_image"], filename = "card.png")
+    return embed, file
 
 async def run_sql(path):
     pool = await get_pool()
@@ -226,7 +297,7 @@ async def get_cards():
 async def get_owners():
     global CACHE_OWNERS_DICT, CACHE_OWNERS_LIST, CACHE_CARDS_UPGRADE
     owners = await run_query(GET_OWNERS)
-    CACHE_OWNERS_DICT = {(row["id"], str(row["fd_cowner"])): row for row in owners}
+    CACHE_OWNERS_DICT = {(row["fd_card"], str(row["fd_cowner"])): row for row in owners}
     CACHE_OWNERS_LIST = list(CACHE_OWNERS_DICT.values())
     CACHE_CARDS_UPGRADE = {(row["fd_display"], str(row["fd_cowner"])): row for row in owners}
     print("Owners cached")
@@ -239,7 +310,7 @@ async def add_user(user):
     return await run_query(ADD_USER, (user.id, user.name, datetime.now()), False)
 
 async def add_ownership(card, card_id, user, date):
-    global CACHE_OWNERS_DICT, CACHE_OWNERS_LIST, CACHE_CARDS_UPGRADE, CACHE_CARDS_COLLECTION
+    global CACHE_OWNERS_DICT, CACHE_OWNERS_LIST, CACHE_CARDS_COLLECTION
     new = {
         "fd_card": card,
         "fd_display": card_id,
@@ -250,8 +321,8 @@ async def add_ownership(card, card_id, user, date):
         "fd_created": date
     }
     CACHE_OWNERS_DICT[(card, str(user["id"]))] = new
-    CACHE_CARDS_UPGRADE[(card_id, str(user["id"]))] = new
     CACHE_OWNERS_LIST.append(new)
+    CACHE_CARDS_UPGRADE[(card_id, str(user["id"]))] = new
 
     collection = CACHE_CARDS_COLLECTION.get(str(user["id"]))
     if collection is not None:
@@ -274,6 +345,50 @@ async def generate_card_id(length = 8):
                 if not await cursor.fetchone():
                     return code  
                 
+async def get_image(url, max = (800, 800)):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                print(f"url: {url}")
+                raise Exception("Failed to fetch image")
+            
+            data = await resp.read()
+
+    img = Image.open(BytesIO(data))
+    img = img.convert("RGB")
+    img.thumbnail(max)
+
+    output = BytesIO()
+    img.save(output, format = "PNG")
+    
+    return output.getvalue()
+
+async def get_image_file(path):
+    global CACHE_IMAGES_MEMORY
+    img_data = None
+
+    if path in CACHE_IMAGES_MEMORY:
+        img_data = CACHE_IMAGES_MEMORY[path]
+    else:
+        disk_cache = get_cache(path)
+        if os.path.exists(disk_cache):
+            with open(disk_cache, "rb") as f:
+                img_data = f.read()
+
+            CACHE_IMAGES_MEMORY[path] = img_data
+
+    if img_data is None:
+        img_data = await get_image(constants.IMAGE_HOST.format(path))
+        CACHE_IMAGES_MEMORY[path] = img_data
+
+        with open(disk_cache, "wb") as f:
+            f.write(img_data)
+
+    if len(CACHE_IMAGES_MEMORY) > CACHE_MAX_MEMORY:
+        CACHE_IMAGES_MEMORY.pop(next(iter(CACHE_IMAGES_MEMORY)))
+
+    return discord.File(fp = BytesIO(img_data), filename = "card.png")
+
 async def generate_card_embed(card, user, signed = False):
     global CACHE_OWNERS_DICT, CACHE_OWNERS_LIST
     now = datetime.now()
@@ -304,7 +419,7 @@ async def generate_card_embed(card, user, signed = False):
     if card["fd_desc"]:
         desc += f"\n\n{card['fd_desc']}"
 
-    file = discord.File(card["fd_image"], filename = "card.png")
+    file = await get_image_file(card["fd_image"])
 
     if signed:
         embed = discord.Embed(
@@ -342,9 +457,12 @@ async def upgrade_card(card):
         if details["fd_desc"]:
             desc += f"\n\n{details['fd_desc']}"
 
-        file = discord.File(details["fd_image"], filename = "card.png")
+        file = await get_image_file(details["fd_image"])
 
         if await run_query(UPGRADE_CARD, (rating, copies + 1, card_id), False):
+            updated = CACHE_OWNERS_DICT.get((card["fd_card"], card["fd_cowner"]))
+            updated["fd_rating"] = rating
+            updated["fd_dupes"] = copies + 1
             caption = "**You upgraded your card!**"
             if details["fd_type"] == "signed":
                 embed = discord.Embed(
