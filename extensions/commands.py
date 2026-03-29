@@ -21,7 +21,7 @@ class CommandsCog(commands.Cog):
 
     @commands.hybrid_command(name = "help", description = "shows all commands", 
                              extras = {"syntax": "`bc help [command]`", "args": "- command: **optional**, command name"})
-    async def help(self, ctx, *, command = None):
+    async def help(self, ctx, *, command: str = None):
         '''shows all commands'''
         if not command:
             embed = helpers.util.get_info(self.bot)
@@ -32,7 +32,6 @@ class CommandsCog(commands.Cog):
             await ctx.reply(f"`{command} is not a command`")
         else:
             await ctx.reply(embed = embed, mention_author = False)
-        print("Command: help")
 
     @commands.hybrid_command(name = "start", description = "initializes user profile",
                              extras = {"syntax": "`bc start`", "args": None})
@@ -45,7 +44,6 @@ class CommandsCog(commands.Cog):
                 await ctx.reply("Successfully registered! You can check with `profile` command")
             else:
                 await ctx.reply("A problem was encountered during registration! Please try again later")
-        print("Command: start")
 
     @commands.hybrid_command(name = "profile", description = "shows the profile of a user",
                              extras = {"syntax": "`bc profile [@user]`", "args": "- user: **optional**, user mention"})
@@ -54,15 +52,19 @@ class CommandsCog(commands.Cog):
         target = user or ctx.author
         if not await helpers.util.check_user(target.id):
             return await ctx.reply(f"<@!{target.id}> is not registered")
-        
-        if helpers.util.check_lock(ctx.author.id):
-            return await ctx.reply("**You\'re account has been locked! Please contact any game admin.**")
+        if not await helpers.util.check_user(ctx.author.id):
+            pass
+        else:
+            if helpers.util.check_lock(ctx.author.id):
+                return await ctx.reply("**You\'re account has been locked! Please contact any game admin.**")
         
         details = helpers.util.CACHE_USERS_DICT.get(str(target.id))
-        embed = helpers.util.get_profile_embed(target, details)
+        embed, file = await helpers.util.get_profile_embed(target, details)
 
-        await ctx.reply(embed = embed, mention_author = False)
-        print("Command: profile")
+        if file is not None:
+            return await ctx.reply(embed = embed, file = file, mention_author = False)
+        else:
+            return await ctx.reply(embed = embed, mention_author = False)
 
     @commands.hybrid_command(name = "card", description = "gets a card from the current pool",
                              extras = {"syntax": "`bc card`", "args": None})
@@ -70,10 +72,10 @@ class CommandsCog(commands.Cog):
     async def card(self, ctx):
         '''gets a card from the current pool'''
         if not await helpers.util.check_user(ctx.author.id):
-            await ctx.reply("New user detected! Please use `start` command.")
+            return await ctx.reply("New user detected! Please use `start` command.")
         else:
             user = await helpers.util.get_user(ctx.author.id)
-            if helpers.util.check_lock(user):
+            if helpers.util.check_lock(user["id"]):
                 return await ctx.reply("**You\'re account has been locked! Please contact any game admin.**")
             
             if helpers.util.roll_with_multi(user["fd_multi"]):
@@ -83,8 +85,7 @@ class CommandsCog(commands.Cog):
                 card = random.choice(helpers.util.CACHE_CARDS_NORMAL) if helpers.util.CACHE_CARDS_NORMAL else None
                 card_embed, card_image, caption = await helpers.util.generate_card_embed(card, user)
         
-            await ctx.reply(content = f"{caption}", embed = card_embed, file = card_image, mention_author = False)
-        print("Command: card")
+            return await ctx.reply(content = f"{caption}", embed = card_embed, file = card_image, mention_author = False)
 
     @commands.hybrid_command(name = "cards", description = "shows card collection of a user",
                              extras = {"syntax": "`bc cards [@user]`", "args": "- user: **optional**, user mention"})
@@ -105,12 +106,11 @@ class CommandsCog(commands.Cog):
         embed = helpers.util.card_list_embed(target, user_cards, 0, view.total)
 
         await ctx.reply(embed = embed, view = view, mention_author = False)
-        print("Command: cards")
 
     @commands.hybrid_command(name = "upgrade", description = "upgrade a card to a higher rating",
                              extras = {"syntax": "`bc upgrade <card_id>`", "args": "- card_id: **required**, ID of the card"})
     @commands.dynamic_cooldown(lambda ctx: helpers.util.get_cooldown(ctx, constants.CooldownCommand.UPGRADE), commands.BucketType.user)
-    async def upgrade(self, ctx, card_id):
+    async def upgrade(self, ctx, card_id: str):
         '''upgrade a card to a higher rating'''
         if not await helpers.util.check_user(ctx.author.id):
             await ctx.reply("New user detected! Please use `start` command.")
@@ -138,7 +138,135 @@ class CommandsCog(commands.Cog):
                         await message.edit(content = f"{caption}", view = None)
             else:
                 await message.edit(content = "Upgrade cancelled", view = None)
-        print("Command: upgrade")
+
+    @commands.hybrid_group(name = "set", description = "sets values to multiple things", with_app_command = True,
+                           extras = {"syntax": "`bc set <field> <value>`", "args": "- field: **required**, field to set value\n- value: **required**, value to set"})
+    async def set(self, ctx):
+        '''set value to a field'''
+        if ctx.invoked_subcommand is None:
+            perms = helpers.util.get_command_perms(ctx)
+            await ctx.reply(f"Available fields: `bio`, `favorite`{perms}")
+
+    @set.command(name = "bio", description = "sets bio of a user",
+                 extras = {"syntax": "`bc set bio <value>`", "args": "- value: **required**, bio content"})
+    async def bio(self, ctx, *, value: str):
+        '''sets bio of a user'''
+        if not await helpers.util.check_user(ctx.author.id):
+            return await ctx.reply("New user detected! Please use `start` command.")
+        
+        details = helpers.util.CACHE_USERS_DICT.get(str(ctx.author.id))
+        if not await helpers.util.update_user(details, "fd_desc", value):
+            return await ctx.reply("An error occured while trying to update user")
+        
+        embed, file = await helpers.util.get_profile_embed(ctx.author, details)
+        if file is not None:
+            return await ctx.reply(content = "Bio set successfully", embed = embed, file = file)
+        else:
+            return await ctx.reply(content = "Bio set successfully", embed = embed)
+
+    @set.command(name = "favorite", description = "sets a card image for your profile",
+                 extras = {"syntax": "`bc set favorite <card ID>`", "args": "- card ID: **required**, card ID on your collection"})
+    async def favorite(self, ctx, card: str):
+        '''sets a card image for your profile'''
+        if not await helpers.util.check_user(ctx.author.id):
+            return await ctx.reply("New user detected! Please use `start` command.")
+        
+        if (card, str(ctx.author.id)) not in helpers.util.CACHE_CARDS_UPGRADE:
+            return await ctx.reply("You don\'t own this card")
+        
+        details = helpers.util.CACHE_USERS_DICT.get(str(ctx.author.id))
+        if not await helpers.util.update_user(details, "fd_fav", card):
+            return await ctx.reply("An error occured while trying to update user")
+        
+        embed, file = await helpers.util.get_profile_embed(ctx.author, details)
+        return await ctx.reply(content = "Favorite card set successfully", embed = embed, file = file)
+
+    @set.command(name = "bloom", description = "adds bloom to a user", hidden = True,
+                 extras = {"syntax": "`bc set bloom <user ID> <amount>`", "args": "- user ID: **required**, discord user ID\n- amount: **required**, amount of blooms to be added"})
+    async def bloom(self, ctx, user, amount: int):
+        '''adds blooms to a user'''
+        if not helpers.util.check_perms(ctx):
+            return await ctx.reply("`Not a command`")
+        
+        if not await helpers.util.check_user(user):
+            return await ctx.reply(f"User is not registered")
+        
+        details = helpers.util.CACHE_USERS_DICT.get(str(user))
+        total = details["fd_curr1"] + amount
+        if not await helpers.util.update_user(details, "fd_curr1", total):
+            return await ctx.reply("An error occured while trying to update user")
+        else:
+            return await ctx.reply(f"Added {amount} {constants.BLOOM} to user {user}", mention_author = False)
+
+    @set.command(name = "bloomcension", description = "adds bloomcension to a user", hidden = True,
+                 extras = {"syntax": "`bc set bloomcension <user ID> <amount>`", "args": "- user ID: **required**, discord user ID\n- amount: **required**, amount of bloomscensions to be added"})
+    async def bloomcension(self, ctx, user, amount: int):
+        '''adds bloomscensions to a user'''
+        if not helpers.util.check_perms(ctx):
+            return await ctx.reply("`Not a command`")
+        
+        if not await helpers.util.check_user(user):
+            return await ctx.reply(f"User is not registered")
+        
+        details = helpers.util.CACHE_USERS_DICT.get(str(user))
+        total = details["fd_curr2"] + amount
+        if not await helpers.util.update_user(details, "fd_curr2", total):
+            return await ctx.reply("An error occured while trying to update user")
+        else:
+            return await ctx.reply(f"Added {amount} {constants.BLOOMCENSION} to user {user}", mention_author = False)
+
+    @set.command(name = "bloomspin", description = "adds bloomspin to a user", hidden = True,
+                 extras = {"syntax": "`bc set bloomspin <user ID> <amount>`", "args": "- user ID: **required**, discord user ID\n- amount: **required**, amount of bloomsspins to be added"})
+    async def bloomspin(self, ctx, user, amount: int):
+        '''adds bloomspins to a user'''
+        if not helpers.util.check_perms(ctx):
+            return await ctx.reply("`Not a command`")
+        
+        if not await helpers.util.check_user(user):
+            return await ctx.reply(f"User is not registered")
+        
+        details = helpers.util.CACHE_USERS_DICT.get(str(user))
+        total = details["fd_curr3"] + amount
+        if not await helpers.util.update_user(details, "fd_curr3", total):
+            return await ctx.reply("An error occured while trying to update user")
+        else:
+            return await ctx.reply(f"Added {amount} {constants.BLOOMSPIN} to user {user}", mention_author = False)
+
+    @set.command(name = "lock", description = "locks a user account from the bot", hidden = True,
+                 extras = {"syntax": "`bc set lock <user ID> <boolean>`", "args": "- user ID: **required**, discord user ID\n- boolean: **required**, True or False"})
+    async def lock(self, ctx, user, value: bool):
+        '''locks a user account from the bot'''
+        if not helpers.util.check_perms(ctx):
+            return await ctx.reply("`Not a command`")
+        
+        if not await helpers.util.check_user(user):
+            return await ctx.reply(f"User is not registered")
+        
+        details = helpers.util.CACHE_USERS_DICT.get(str(user))
+        if not await helpers.util.update_user(details, "fd_lock", value):
+            return await ctx.reply("An error occured while trying to update user")
+        else:
+            return await ctx.reply(f"User {user} has been locked out of the bot!", mention_author = False)
+        
+    @set.command(name = "multi", description = "sets chance multiplier for a user", hidden = True,
+                 extras = {"syntax": "`bc set multi <user ID> <multiplier>`", "args": "- user ID: **required**, discord user ID\n- multiplier: **required**, float, chances in rate form (`%` not included)"})
+    async def multi(self, ctx, user, value: float):
+        '''sets chance multiplier for a user'''
+        if not helpers.util.check_perms(ctx):
+            return await ctx.reply("`Not a command`")
+        
+        if not await helpers.util.check_user(user):
+            return await ctx.reply(f"User is not registered")
+        
+        details = helpers.util.CACHE_USERS_DICT.get(str(user))
+        multiplier = helpers.util.parse_multi(value)
+        if multiplier is not None:
+            if not await helpers.util.update_user(details, "fd_multi", multiplier):
+                return await ctx.reply("An error occured while trying to update user")
+            else:
+                return await ctx.reply(f"User {user} multiplier has been set", mention_author = False)
+        else:
+            return await ctx.reply("Make sure the value is within 0 to 100")
 
 async def setup(bot):
     await bot.add_cog(CommandsCog(bot))

@@ -42,7 +42,7 @@ INIT_TABLES = """
     ADD CONSTRAINT fk_fav_id FOREIGN KEY (fd_fav) REFERENCES tb_owners(fd_display);
 """
 
-ID_CHECK = "SELECT 1 FROM tb_owners WHERE fd_card = %s LIMIT 1" 
+ID_CHECK = "SELECT 1 FROM tb_owners WHERE fd_display = %s LIMIT 1" 
 GET_USERS = "SELECT * FROM tb_users" 
 GET_CARDS = "SELECT * FROM tb_cards"
 GET_OWNERS = "SELECT * FROM tb_owners"
@@ -50,3 +50,4 @@ ADD_USER = "INSERT INTO tb_users(id, fd_name, fd_created) VALUES (%s, %s, %s)"
 ADD_OWNER = "INSERT INTO tb_owners(fd_card, fd_display, fd_dupes, fd_oowner, fd_cowner, fd_created) VALUES (%s, %s, 1, %s, %s, %s)"
 UPDATE_COPIES = "UPDATE tb_owners SET fd_dupes = %s WHERE fd_display = %s"
 UPGRADE_CARD = "UPDATE tb_owners SET fd_rating = %s, fd_dupes = %s WHERE fd_display = %s"
+UPDATE_USER = "UPDATE tb_users SET fd_desc = %s, fd_curr1 = %s, fd_curr2 = %s, fd_curr3 = %s, fd_multi = %s, fd_fav = %s, fd_lock = %s WHERE id = %s"

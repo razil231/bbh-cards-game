@@ -4,6 +4,7 @@ import os
 import hashlib
 import secrets
 import string
+import math
 import aiohttp
 import aiomysql
 import aiofiles
@@ -14,7 +15,7 @@ from discord.ext import commands
 from PIL import Image
 from io import BytesIO
 from db import get_pool
-from helpers.queries import ID_CHECK, GET_USERS, GET_CARDS, GET_OWNERS, ADD_USER, ADD_OWNER, UPDATE_COPIES, UPGRADE_CARD
+from helpers.queries import ID_CHECK, GET_USERS, GET_CARDS, GET_OWNERS, ADD_USER, ADD_OWNER, UPDATE_COPIES, UPGRADE_CARD, UPDATE_USER
 
 COGS_FILE = "cogs.json"
 CACHE_USERS_DICT = {}
@@ -83,9 +84,12 @@ def get_info(bot, command = None):
         embed.add_field(name = "`bc help [command]`", value = "- shows all commands", inline = False)
         embed.add_field(name = "`bc start`", value = "- initializes user profile", inline = False)
         embed.add_field(name = "`bc profile [@user]`", value = "- shows the profile of a user", inline = False)
+        embed.add_field(name = "`bc set bio <content>`", value = "- sets bio of a user", inline = False)
+        embed.add_field(name = "`bc set favorite <card ID>`", value = "- sets a card image for your profile", inline = False)
+        embed.add_field(name = "`bc profile [@user]`", value = "- shows the profile of a user", inline = False)
         embed.add_field(name = "`bc card`", value = "- gets a card from the current pool", inline = False)
         embed.add_field(name = "`bc cards [@user]`", value = "- shows card collection of a user", inline = False)
-        embed.add_field(name = "`bc upgrade <card id>`", value = "- upgrade a card to a higher rating", inline = False)
+        embed.add_field(name = "`bc upgrade <card ID>`", value = "- upgrade a card to a higher rating", inline = False)
         embed.set_footer(text = "\"bc help [command]\" for more info")
     else:
         cmd = bot.get_command(command)
@@ -119,6 +123,22 @@ def check_perms(ctx):
 def check_lock(user):
     details = CACHE_USERS_DICT.get(str(user))
     return details["fd_lock"] > 0
+
+def parse_multi(value):
+    try:
+        multi = float(value)
+    except (ValueError, TypeError):
+        return None
+    
+    if not math.isfinite(multi):
+        return None
+    
+    if 0 > multi:
+        return None
+    if 100 < multi:
+        return None
+    
+    return round(multi, 2)
 
 def roll_with_multi(multi):
     base_rate = 0.01
@@ -201,22 +221,11 @@ def card_list_embed(user, cards, page, total):
     embed.set_footer(text = f"Page {page + 1}/{total}")
     return embed
 
-def get_profile_embed(user, details):
-    embed = discord.Embed(
-        title = f"{user.display_name}\'s Profile",
-        description = details["fd_desc"] if details["fd_desc"] is not None else "",
-        color = 0xFF_FF_FF
-    )
-    curr = f"- {details["fd_curr1"]} {constants.BLOOM}\n"
-    curr += f"- {details["fd_curr2"]} {constants.BLOOMCENSION}\n"
-    curr += f"- {details["fd_curr3"]} {constants.BLOOMSPIN}"
-
-    embed.set_thumbnail(url = user.display_avatar.url)
-    embed.add_field(name = "Boosts:", value = f"- __**Signed**__: *{details['fd_multi']:.2f}%* chances", inline = False)
-    embed.add_field(name = "Currency:", value = f"{curr}", inline = False)
-    embed.set_footer(text = f"Created: {display_date(details["fd_created"])}")
-
-    return embed
+def get_command_perms(ctx):
+    if not check_perms(ctx):
+        return ""
+    
+    return ", `bloom`, `bloomcension`, `bloomspin`, `multi`, `lock`"
 
 async def card_info_embed(card):
     details = CACHE_CARDS_DICT.get(card["fd_card"])
@@ -281,7 +290,6 @@ async def check_user(user):
     users = await run_query(GET_USERS)
     CACHE_USERS_DICT = {str(row["id"]): row for row in users}
     CACHE_USERS_LIST = list(CACHE_USERS_DICT.values())
-    print("Users cached")
 
     return user_id in CACHE_USERS_DICT
 
@@ -292,7 +300,6 @@ async def get_cards():
     CACHE_CARDS_LIST = list(CACHE_CARDS_DICT.values())
     CACHE_CARDS_NORMAL = [card for card in CACHE_CARDS_LIST if card["fd_type"] == "normal"]
     CACHE_CARDS_SIGNED = [card for card in CACHE_CARDS_LIST if card["fd_type"] == "signed"]
-    print("Cards cached")
 
 async def get_owners():
     global CACHE_OWNERS_DICT, CACHE_OWNERS_LIST, CACHE_CARDS_UPGRADE
@@ -300,14 +307,13 @@ async def get_owners():
     CACHE_OWNERS_DICT = {(row["fd_card"], str(row["fd_cowner"])): row for row in owners}
     CACHE_OWNERS_LIST = list(CACHE_OWNERS_DICT.values())
     CACHE_CARDS_UPGRADE = {(row["fd_display"], str(row["fd_cowner"])): row for row in owners}
-    print("Owners cached")
 
 async def get_user(user_id):
     await check_user(user_id)
     return CACHE_USERS_DICT.get(str(user_id))
 
 async def add_user(user):
-    return await run_query(ADD_USER, (user.id, user.name, datetime.now()), False)
+    return await run_query(ADD_USER, (user.id, user.name, datetime.now()), False) is not None
 
 async def add_ownership(card, card_id, user, date):
     global CACHE_OWNERS_DICT, CACHE_OWNERS_LIST, CACHE_CARDS_COLLECTION
@@ -330,7 +336,7 @@ async def add_ownership(card, card_id, user, date):
     else:
         CACHE_CARDS_COLLECTION[str(user["id"])] = [new]
     
-    return await run_query(ADD_OWNER, (card, card_id, str(user["id"]), str(user["id"]), date), False)
+    return await run_query(ADD_OWNER, (card, card_id, str(user["id"]), str(user["id"]), date), False) is not None
 
 async def generate_card_id(length = 8):
     chars = string.ascii_uppercase + string.digits
@@ -349,7 +355,6 @@ async def get_image(url, max = (800, 800)):
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
             if resp.status != 200:
-                print(f"url: {url}")
                 raise Exception("Failed to fetch image")
             
             data = await resp.read()
@@ -389,6 +394,13 @@ async def get_image_file(path):
 
     return discord.File(fp = BytesIO(img_data), filename = "card.png")
 
+async def get_fav_file(card, user):
+    o_details = CACHE_CARDS_UPGRADE.get((card, str(user)))
+    c_details = CACHE_CARDS_DICT.get(o_details["fd_card"])
+    rating = get_card_rating(o_details["fd_rating"])
+    file = await get_image_file(c_details["fd_image"])
+    return file, rating
+
 async def generate_card_embed(card, user, signed = False):
     global CACHE_OWNERS_DICT, CACHE_OWNERS_LIST
     now = datetime.now()
@@ -402,18 +414,12 @@ async def generate_card_embed(card, user, signed = False):
         card_id = owned["fd_display"]
         now = owned["fd_created"]
         rating = get_card_rating(owned["fd_rating"])
-        if await run_query(UPDATE_COPIES, (copies, card_id), False):
-            print("Updated number of copies")
-        else:
-            print("Failed updating the number of copies")
+        await run_query(UPDATE_COPIES, (copies, card_id), False)
     else:
         caption = "**You acquired a new card**"
         card_id = await generate_card_id()
         rating = get_card_rating(0)
-        if await add_ownership(int(card["id"]), card_id, user, now):
-            print("Added new ownership")
-        else:
-            print("Failed adding new ownership")
+        await add_ownership(int(card["id"]), card_id, user, now)
 
     desc = f"{card['fd_bundle']}\n{card['fd_member']}\n{card['fd_type']}"
     if card["fd_desc"]:
@@ -439,6 +445,31 @@ async def generate_card_embed(card, user, signed = False):
 
     return embed, file, caption
 
+async def get_profile_embed(user, details):
+    embed = discord.Embed(
+        title = f"{user.display_name}\'s Profile",
+        description = details["fd_desc"] if details["fd_desc"] is not None else "",
+        color = 0xFF_FF_FF
+    )
+    curr = f"- {details["fd_curr1"]} {constants.BLOOM}\n"
+    curr += f"- {details["fd_curr2"]} {constants.BLOOMCENSION}\n"
+    curr += f"- {details["fd_curr3"]} {constants.BLOOMSPIN}"
+
+    embed.add_field(name = "Boosts:", value = f"- __**Signed**__: *{details['fd_multi']:.2f}%* chances", inline = False)
+    embed.add_field(name = "Currency:", value = f"{curr}", inline = False)
+
+    if details["fd_fav"] is not None:
+        image, rating = await get_fav_file(details["fd_fav"], user.id)
+        embed.set_image(url = "attachment://card.png")
+        embed.add_field(name = "", value = f"{rating}")
+    else:
+        image = None
+
+    embed.set_thumbnail(url = user.display_avatar.url)
+    embed.set_footer(text = f"Created: {display_date(details["fd_created"])}")
+
+    return embed, image
+
 async def upgrade_card(card):
     rating = card["fd_rating"]
     copies = card["fd_dupes"]
@@ -459,7 +490,7 @@ async def upgrade_card(card):
 
         file = await get_image_file(details["fd_image"])
 
-        if await run_query(UPGRADE_CARD, (rating, copies + 1, card_id), False):
+        if await run_query(UPGRADE_CARD, (rating, copies + 1, card_id), False) is not None:
             updated = CACHE_OWNERS_DICT.get((card["fd_card"], card["fd_cowner"]))
             updated["fd_rating"] = rating
             updated["fd_dupes"] = copies + 1
@@ -483,3 +514,14 @@ async def upgrade_card(card):
             return embed, file, caption
         else:
             return None, None, f"An error occured while trying to upgrade"
+
+async def update_user(details, field, value):
+    details[field] = value
+    if await run_query(UPDATE_USER, (
+        details["fd_desc"], details["fd_curr1"], 
+        details["fd_curr2"], details["fd_curr3"], 
+        details["fd_multi"], details["fd_fav"], 
+        details["fd_lock"], details["id"]), False
+    ) is None:
+        return False
+    return True
