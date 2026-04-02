@@ -35,10 +35,10 @@ async def on_ready():
         except Exception as e:
             print(f"Failed to load {ext}: {e}")
 
+    helpers.util.load_guilds()
     await init_db()
     await helpers.util.get_cards()
     await helpers.util.get_owners()
-
     print("Card bot online")
 
 @cardBot.event
@@ -60,6 +60,8 @@ async def on_command_error(ctx, error):
         await ctx.reply("`Not a command`", mention_author = False)
     elif isinstance(error, commands.MissingRequiredArgument):
         await ctx.reply("Argument missing, please check the correct syntax in `bc help [command]`", mention_author = False)
+    elif isinstance(error, commands.CheckFailure):
+        await ctx.reply("This server is not authorized to use this bot!", mention_author = False)
     else:
         await ctx.reply("`Exception caught!`", mention_author = False)
         print(f"Exception: {error}")
@@ -103,6 +105,7 @@ async def reload_helpers(ctx):
             importlib.reload(views.collection_view)
             importlib.reload(views.confirm_view)
 
+            helpers.util.load_guilds()
             await helpers.util.get_cards()
             await helpers.util.get_owners()
             await ctx.reply("`Helpers reloaded`", mention_author = False)
@@ -126,6 +129,8 @@ async def sql_run(ctx, filepath):
 @commands.is_owner()
 async def create_tables(ctx):
     await setup_db()
+    await helpers.util.get_cards()
+    await helpers.util.get_owners()
     await ctx.reply("`Initial tables created`")
     print("Commands: create_tables")
 
@@ -139,6 +144,25 @@ async def close_db(ctx):
         print("DB connection closed")
     await ctx.reply("`DB connection closed`", mention_author = False)
 
+@cardBot.command(hidden = True)
+async def guild_check(ctx):
+    return ctx.guild and ctx.guild.id in helpers.util.CACHE_GUILDS
+
+@cardBot.command(hidden = True)
+@commands.is_owner()
+async def add_guild(ctx, guild: int):
+    helpers.util.add_guild(guild)
+    return await ctx.reply(f"Guild {guild} added")
+
+@cardBot.command(hidden = True)
+@commands.is_owner()
+async def remove_guild(ctx, guild: int):
+    helpers.util.remove_guild(guild)
+    server = cardBot.get_guild(guild)
+    if server:
+        await server.leave()
+    return await ctx.reply(f"Guild {guild} removed")
 ### --------------------- BOT COMMANDS END --------------------- ###
 
+cardBot.add_check(guild_check)
 cardBot.run(token)

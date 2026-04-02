@@ -15,9 +15,10 @@ from discord.ext import commands
 from PIL import Image
 from io import BytesIO
 from db import get_pool
-from helpers.queries import ID_CHECK, GET_USERS, GET_CARDS, GET_OWNERS, ADD_USER, ADD_OWNER, UPDATE_COPIES, UPGRADE_CARD, UPDATE_USER
+from helpers.queries import ID_CHECK, ASCEND_CHECK, GET_USERS, GET_CARDS, GET_OWNERS, ADD_USER, ADD_OWNER, UPDATE_OWNERSHIP, UPDATE_USER
 
 COGS_FILE = "cogs.json"
+GUILDS_FILE = "guilds.json"
 CACHE_USERS_DICT = {}
 CACHE_USERS_LIST = []
 CACHE_CARDS_DICT = {}
@@ -32,6 +33,7 @@ CACHE_IMAGES_MEMORY = {}
 
 CACHE_DIR = "cache/images"
 CACHE_MAX_MEMORY = 100
+CACHE_GUILDS = set()
 
 os.makedirs(CACHE_DIR, exist_ok = True)
 
@@ -42,6 +44,28 @@ BASE_COOLDOWNS = {
     constants.CooldownCommand.UPGRADE: constants.CD_UPGRADE
 }
 
+def load_guilds():
+    global CACHE_GUILDS
+    try:
+        with open(GUILDS_FILE, "r") as f:
+            data = json.load(f)
+            CACHE_GUILDS = set(data.get("guilds", []))
+    except FileNotFoundError:
+        CACHE_GUILDS = set()
+
+def save_guilds():
+    with open(GUILDS_FILE, "w") as f:
+        json.dump({"guilds": list(CACHE_GUILDS)}, f, indent = 4)
+
+def add_guild(guild):
+    global CACHE_GUILDS
+    CACHE_GUILDS.add(guild)
+    save_guilds()
+
+def remove_guild(guild):
+    global CACHE_GUILDS
+    CACHE_GUILDS.discard(guild)
+    save_guilds()
 
 def load_cogs() -> list[str]:
     if not os.path.exists(COGS_FILE):
@@ -68,6 +92,25 @@ def save_cog(extension: str):
 def get_cache(path):
     filename = hashlib.md5(path.encode()).hexdigest() + ".png"
     return os.path.join(CACHE_DIR, filename)
+
+def get_start_embed(start = False):
+    embed = discord.Embed(
+        title = "Welcome to BBH Cards",
+        description = "A fun card collecting discord bot exclusive to this server",
+        color = 0xFF_FF_FF
+    )
+    embed.add_field(name = "What is it about?", value = "A discord bot that will let users collect, upgrade, ascend and trade BINI cards", inline = False)
+    embed.add_field(name = "How to play?", value = "To start you just have to create a user profile via `/start`", inline = False)
+    embed.add_field(name = "What does upgrade mean?", value = "Upgrading a card via `/upgrade` will use copies of that specific card to upgrade it to the next star", inline = False)
+    embed.add_field(name = "What does ascend mean?", value = "Ascending a card will tier up any 5 star card to *rare*, *legendary* or *ultimate* tier", inline = False)
+    embed.add_field(name = "So ascending is random?", value = "Yes, the base chances are as follows: *rare*: ***60%***, *legendary*: ***30%*** and *ultimate*: ***10%***", inline = False)
+    embed.add_field(name = "This embed?", value = "You can still see this embed via `/info` command", inline = False)
+    embed.add_field(name = "", value = "", inline = False)
+    if start:
+        embed.add_field(name = "Create a user profile?", value = "If the buttons below are disabled, use the `/start` command again.")
+    embed.set_footer(text = "Please report bugs to any game admins")
+
+    return embed
 
 def get_info(bot, command = None):
     is_command = True
@@ -145,6 +188,28 @@ def roll_with_multi(multi):
     chance = min(base_rate * multi, 1.0)
     return secrets.randbelow(10_000) < int(chance * 10_000)
 
+def roll_ascend(multi):
+    multi = max(0, min(multi, 100))
+    additional = 1 + (multi / 100)
+
+    ultimate = 10 * additional
+    legendary = 30
+    rare = 60
+
+    scale = 100
+    ultimate = int(ultimate * scale)
+    legendary = int(legendary * scale)
+    rare = int(rare * scale)
+    total = ultimate + legendary + rare
+
+    roll = secrets.randbelow(total)
+    if roll < ultimate:
+        return constants.RARITY[2], 8
+    elif roll < ultimate + legendary:
+        return constants.RARITY[1], 7
+    else:
+        return constants.RARITY[0], 6
+
 def get_color(member):
     color = constants.COLOR_OT8
     if member == "Aiah":
@@ -166,14 +231,26 @@ def get_color(member):
     return color
 
 def get_card_rating(rating):
-    str = ""
+    stars = ""
+    rarity = ""
 
-    for _ in range(rating):
-        str += f"{constants.STAR_LIGHT}"
-    for _ in range(5 - rating):
-        str += f"{constants.STAR_DARK}"
+    if rating > 5:
+        if rating == 6:
+            rarity = "rare"
+            stars = f"{constants.STAR_RARE}{constants.STAR_RARE}{constants.STAR_RARE}{constants.STAR_RARE}{constants.STAR_RARE}"
+        elif rating == 7:
+            rarity = "legendary"
+            stars = f"{constants.STAR_LEGENDARY}{constants.STAR_LEGENDARY}{constants.STAR_LEGENDARY}{constants.STAR_LEGENDARY}{constants.STAR_LEGENDARY}"
+        elif rating == 8:
+            rarity = "ultimate"
+            stars = f"{constants.STAR_ULTIMATE}{constants.STAR_ULTIMATE}{constants.STAR_ULTIMATE}{constants.STAR_ULTIMATE}{constants.STAR_ULTIMATE}"
+    else:
+        for _ in range(rating):
+            stars += f"{constants.STAR_LIGHT}"
+        for _ in range(5 - rating):
+            stars += f"{constants.STAR_DARK}"
 
-    return str
+    return stars, rarity
 
 def get_user_cards(user_id):
     global CACHE_CARDS_COLLECTION
@@ -191,9 +268,14 @@ def get_user_cards(user_id):
 def get_cooldown(ctx, command_enum: constants.CooldownCommand):
     base = BASE_COOLDOWNS[command_enum]
 
-    booster_role = discord.utils.get(ctx.author.roles, name = "Server Booster")
+    booster_role = discord.utils.get(ctx.author.roles, id = constants.BBH_BOOSTER)
+    tester_role = discord.utils.get(ctx.author.roles, id = constants.BBH_TESTER)
+
     if booster_role:
         base *= 0.8
+
+    if tester_role:
+        base = base ** 0
 
     return commands.Cooldown(1, base)
 
@@ -210,9 +292,23 @@ def card_list_embed(user, cards, page, total):
     for i, card in enumerate(pages, start = start):
         details = CACHE_CARDS_DICT.get(card["fd_card"])
         if details["fd_type"] == "signed":
-            display = f"{constants.TYPE_SIGNED} **{details["fd_bundle"]}**: {details["fd_member"]}"
+            if card["fd_rarity"] == constants.RARITY[0]:
+                display = f"{constants.TYPE_SIGNED_RARE} **{details["fd_bundle"]}**: {details["fd_member"]}"
+            elif card["fd_rarity"] == constants.RARITY[1]:
+                display = f"{constants.TYPE_SIGNED_LEGENDARY} **{details["fd_bundle"]}**: {details["fd_member"]}"
+            elif card["fd_rarity"] == constants.RARITY[2]:
+                display = f"{constants.TYPE_SIGNED_ULTIMATE} **{details["fd_bundle"]}**: {details["fd_member"]}"
+            else:
+                display = f"{constants.TYPE_SIGNED} **{details["fd_bundle"]}**: {details["fd_member"]}"
         else:
-            display = f"{constants.TYPE_NORMAL} **{details["fd_bundle"]}**: {details["fd_member"]}"
+            if card["fd_rarity"] == constants.RARITY[0]:
+                display = f"{constants.TYPE_NORMAL_RARE} **{details["fd_bundle"]}**: {details["fd_member"]}"
+            elif card["fd_rarity"] == constants.RARITY[1]:
+                display = f"{constants.TYPE_NORMAL_LEGENDARY} **{details["fd_bundle"]}**: {details["fd_member"]}"
+            elif card["fd_rarity"] == constants.RARITY[2]:
+                display = f"{constants.TYPE_NORMAL_ULTIMATE} **{details["fd_bundle"]}**: {details["fd_member"]}"
+            else:
+                display = f"{constants.TYPE_NORMAL} **{details["fd_bundle"]}**: {details["fd_member"]}"
         
         embed.add_field(name = f"`{card["fd_display"]}`", value = f"{display}", inline = True)
         if (i + 1) % 2 == 0:
@@ -227,33 +323,6 @@ def get_command_perms(ctx):
     
     return ", `bloom`, `bloomcension`, `bloomspin`, `multi`, `lock`"
 
-async def card_info_embed(card):
-    details = CACHE_CARDS_DICT.get(card["fd_card"])
-    desc = f"{details["fd_bundle"]}\n{details['fd_member']}\n{details['fd_type']}"
-
-    file = await get_image_file(details["fd_image"])
-
-    if details["fd_desc"]:
-        desc += f"\n\n{details['fd_desc']}"
-
-    if details["fd_type"] == "signed":
-        embed = discord.Embed(
-            title = f"Card ID: `{card["fd_display"]}`",
-            description = f"{desc}",
-            color = get_color(details["fd_member"])
-        )
-    else:
-        embed = discord.Embed(
-            title = f"Card ID: `{card["fd_display"]}`",
-            description = f"{desc}"
-        )
-        
-    embed.add_field(name = "", value = f"**Obtained by**: <@!{card["fd_oowner"]}>\n**Owned by**: <@!{card["fd_cowner"]}>")
-    embed.add_field(name = "", value = f"Copies owned: {card["fd_dupes"]}\n{get_card_rating(card["fd_rating"])}", inline = False)
-    embed.set_image(url = "attachment://card.png")
-    embed.set_footer(text = f"Obtained: {display_date(card["fd_created"])}")
-    return embed, file
-
 async def run_sql(path):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -267,19 +336,41 @@ async def run_sql(path):
 
         await conn.commit()
 
-async def run_query(query, params = None, fetch = True):
+async def run_query(queries, fetch = True):
     pool = await get_pool()
 
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute(query, params)
+            if isinstance(queries, tuple):
+                queries = [queries]
 
-            if fetch:
-                return await cursor.fetchall()
-            else:
-                await conn.commit()
-                return cursor.rowcount
+            results = []
+            try:
+                for query, params in queries:
+                    await cursor.execute(query, params)
+                    if fetch:
+                        results.append(await cursor.fetchall())
+
+                if not fetch:
+                    await conn.commit()
+                    return cursor.rowcount
+                else:
+                    return results if len(results) > 1 else results[0]
+            except Exception:
+                print("run_query exception")
+                await conn.rollback()
+                raise
     
+async def check_ascend_dupe(type, rating, rarity, owner):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute(ASCEND_CHECK, (type, rating, rarity, owner))
+            if not await cursor.fetchone():
+                return False
+            else:
+                return True
+
 async def check_user(user):
     global CACHE_USERS_DICT, CACHE_USERS_LIST
     user_id = str(user)
@@ -287,7 +378,8 @@ async def check_user(user):
     if user_id in CACHE_USERS_DICT:
         return True
 
-    users = await run_query(GET_USERS)
+    query = [(GET_USERS, None)]
+    users = await run_query(query)
     CACHE_USERS_DICT = {str(row["id"]): row for row in users}
     CACHE_USERS_LIST = list(CACHE_USERS_DICT.values())
 
@@ -295,7 +387,8 @@ async def check_user(user):
 
 async def get_cards():
     global CACHE_CARDS_DICT, CACHE_CARDS_LIST, CACHE_CARDS_NORMAL, CACHE_CARDS_SIGNED
-    cards = await run_query(GET_CARDS)
+    query = [(GET_CARDS, None)]
+    cards = await run_query(query)
     CACHE_CARDS_DICT = {row["id"]: row for row in cards}
     CACHE_CARDS_LIST = list(CACHE_CARDS_DICT.values())
     CACHE_CARDS_NORMAL = [card for card in CACHE_CARDS_LIST if card["fd_type"] == "normal"]
@@ -303,8 +396,9 @@ async def get_cards():
 
 async def get_owners():
     global CACHE_OWNERS_DICT, CACHE_OWNERS_LIST, CACHE_CARDS_UPGRADE
-    owners = await run_query(GET_OWNERS)
-    CACHE_OWNERS_DICT = {(row["fd_card"], str(row["fd_cowner"])): row for row in owners}
+    query = [(GET_OWNERS, None)]
+    owners = await run_query(query)
+    CACHE_OWNERS_DICT = {(row["fd_card"], str(row["fd_cowner"]), row["fd_rarity"]): row for row in owners}
     CACHE_OWNERS_LIST = list(CACHE_OWNERS_DICT.values())
     CACHE_CARDS_UPGRADE = {(row["fd_display"], str(row["fd_cowner"])): row for row in owners}
 
@@ -313,20 +407,22 @@ async def get_user(user_id):
     return CACHE_USERS_DICT.get(str(user_id))
 
 async def add_user(user):
-    return await run_query(ADD_USER, (user.id, user.name, datetime.now()), False) is not None
+    query = [(ADD_USER, (user.id, user.name, datetime.now()))]
+    return await run_query(query, False) is not None
 
-async def add_ownership(card, card_id, user, date):
+async def add_ownership(card, card_id, user, date, rarity = "basic"):
     global CACHE_OWNERS_DICT, CACHE_OWNERS_LIST, CACHE_CARDS_COLLECTION
     new = {
         "fd_card": card,
         "fd_display": card_id,
         "fd_rating": 0,
+        "fd_rarity": rarity,
         "fd_dupes": 1,
         "fd_oowner": str(user["id"]),
         "fd_cowner": str(user["id"]),
         "fd_created": date
     }
-    CACHE_OWNERS_DICT[(card, str(user["id"]))] = new
+    CACHE_OWNERS_DICT[(card, str(user["id"]), rarity)] = new
     CACHE_OWNERS_LIST.append(new)
     CACHE_CARDS_UPGRADE[(card_id, str(user["id"]))] = new
 
@@ -336,7 +432,8 @@ async def add_ownership(card, card_id, user, date):
     else:
         CACHE_CARDS_COLLECTION[str(user["id"])] = [new]
     
-    return await run_query(ADD_OWNER, (card, card_id, str(user["id"]), str(user["id"]), date), False) is not None
+    query = [(ADD_OWNER, (card, card_id, rarity, str(user["id"]), str(user["id"]), date))]
+    return await run_query(query, False) is not None
 
 async def generate_card_id(length = 8):
     chars = string.ascii_uppercase + string.digits
@@ -351,7 +448,7 @@ async def generate_card_id(length = 8):
                 if not await cursor.fetchone():
                     return code  
                 
-async def get_image(url, max = (800, 800)):
+async def get_image(url, rarity, max = (800, 800)):
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
             if resp.status != 200:
@@ -359,32 +456,46 @@ async def get_image(url, max = (800, 800)):
             
             data = await resp.read()
 
+    if rarity == constants.RARITY[0]:
+        overlay = Image.open("images/overlay_rare.png").convert("RGBA")
+    elif rarity == constants.RARITY[1]:
+        overlay = Image.open("images/overlay_rare.png").convert("RGBA")
+    elif rarity == constants.RARITY[2]:
+        overlay = Image.open("images/overlay_rare.png").convert("RGBA")
+    else:
+        overlay = None
+
     img = Image.open(BytesIO(data))
-    img = img.convert("RGB")
+    img = img.convert("RGBA")
     img.thumbnail(max)
+
+    if overlay is not None:
+        overlay = overlay.resize(img.size)
+        img.paste(overlay, (0, 0), overlay)
 
     output = BytesIO()
     img.save(output, format = "PNG")
     
     return output.getvalue()
 
-async def get_image_file(path):
+async def get_image_file(path, rarity):
     global CACHE_IMAGES_MEMORY
+    cache_key = f"{path}-{rarity}"
     img_data = None
 
-    if path in CACHE_IMAGES_MEMORY:
-        img_data = CACHE_IMAGES_MEMORY[path]
+    if cache_key in CACHE_IMAGES_MEMORY:
+        img_data = CACHE_IMAGES_MEMORY[cache_key]
     else:
-        disk_cache = get_cache(path)
+        disk_cache = get_cache(cache_key)
         if os.path.exists(disk_cache):
             with open(disk_cache, "rb") as f:
                 img_data = f.read()
 
-            CACHE_IMAGES_MEMORY[path] = img_data
+            CACHE_IMAGES_MEMORY[cache_key] = img_data
 
     if img_data is None:
-        img_data = await get_image(constants.IMAGE_HOST.format(path))
-        CACHE_IMAGES_MEMORY[path] = img_data
+        img_data = await get_image(constants.IMAGE_HOST.format(path), rarity)
+        CACHE_IMAGES_MEMORY[cache_key] = img_data
 
         with open(disk_cache, "wb") as f:
             f.write(img_data)
@@ -397,35 +508,36 @@ async def get_image_file(path):
 async def get_fav_file(card, user):
     o_details = CACHE_CARDS_UPGRADE.get((card, str(user)))
     c_details = CACHE_CARDS_DICT.get(o_details["fd_card"])
-    rating = get_card_rating(o_details["fd_rating"])
-    file = await get_image_file(c_details["fd_image"])
-    return file, rating
+    stars, rarity = get_card_rating(o_details["fd_rating"])
+    file = await get_image_file(c_details["fd_image"], rarity)
+    return file, stars
 
-async def generate_card_embed(card, user, signed = False):
+async def generate_card_embed(card, user, signed = False, rarity = "basic"):
     global CACHE_OWNERS_DICT, CACHE_OWNERS_LIST
     now = datetime.now()
     copies = 1
     
-    owned = CACHE_OWNERS_DICT.get((card["id"], str(user["id"])))
+    owned = CACHE_OWNERS_DICT.get((card["id"], str(user["id"]), rarity))
     if owned:
         caption = "**You acquired a duplicate card**"
         owned["fd_dupes"] += 1
         copies = owned["fd_dupes"]
         card_id = owned["fd_display"]
         now = owned["fd_created"]
-        rating = get_card_rating(owned["fd_rating"])
-        await run_query(UPDATE_COPIES, (copies, card_id), False)
+        stars, rarity = get_card_rating(owned["fd_rating"])
+        query = [(UPDATE_OWNERSHIP, (owned["fd_rating"], rarity, copies, user["id"], card_id))]
+        await run_query(query, False)
     else:
         caption = "**You acquired a new card**"
         card_id = await generate_card_id()
-        rating = get_card_rating(0)
+        stars, rarity = get_card_rating(0)
         await add_ownership(int(card["id"]), card_id, user, now)
 
     desc = f"{card['fd_bundle']}\n{card['fd_member']}\n{card['fd_type']}"
     if card["fd_desc"]:
         desc += f"\n\n{card['fd_desc']}"
 
-    file = await get_image_file(card["fd_image"])
+    file = await get_image_file(card["fd_image"], rarity)
 
     if signed:
         embed = discord.Embed(
@@ -439,7 +551,7 @@ async def generate_card_embed(card, user, signed = False):
             description = desc
         )
 
-    embed.add_field(name = "", value = f"Copies owned: {copies}\n{rating}")
+    embed.add_field(name = "", value = f"Copies owned: {copies}\n{stars}")
     embed.set_image(url = "attachment://card.png")
     embed.set_footer(text = f"Obtained: {display_date(now)}")
 
@@ -470,12 +582,40 @@ async def get_profile_embed(user, details):
 
     return embed, image
 
+async def card_info_embed(card):
+    details = CACHE_CARDS_DICT.get(card["fd_card"])
+    desc = f"{details["fd_bundle"]}\n{details['fd_member']}\n{details['fd_type']}"
+
+    stars, rarity = get_card_rating(card["fd_rating"])
+    file = await get_image_file(details["fd_image"], rarity)
+
+    if details["fd_desc"]:
+        desc += f"\n\n{details['fd_desc']}"
+
+    if details["fd_type"] == "signed":
+        embed = discord.Embed(
+            title = f"Card ID: `{card["fd_display"]}`",
+            description = f"{desc}",
+            color = get_color(details["fd_member"])
+        )
+    else:
+        embed = discord.Embed(
+            title = f"Card ID: `{card["fd_display"]}`",
+            description = f"{desc}"
+        )
+        
+    embed.add_field(name = "", value = f"**Obtained by**: <@!{card["fd_oowner"]}>\n**Owned by**: <@!{card["fd_cowner"]}>")
+    embed.add_field(name = "", value = f"Copies owned: {card["fd_dupes"]}\n{stars}", inline = False)
+    embed.set_image(url = "attachment://card.png")
+    embed.set_footer(text = f"Obtained: {display_date(card["fd_created"])}")
+    return embed, file
+
 async def upgrade_card(card):
     rating = card["fd_rating"]
     copies = card["fd_dupes"]
     card_id = card["fd_display"]
 
-    if rating == 5:
+    if rating >= 5:
         return None, None, "Card is already max upgraded!"
     
     if copies < 2 ** (rating + 1):
@@ -488,10 +628,12 @@ async def upgrade_card(card):
         if details["fd_desc"]:
             desc += f"\n\n{details['fd_desc']}"
 
-        file = await get_image_file(details["fd_image"])
+        stars, rarity = get_card_rating(rating)
+        file = await get_image_file(details["fd_image"], rarity)
 
-        if await run_query(UPGRADE_CARD, (rating, copies + 1, card_id), False) is not None:
-            updated = CACHE_OWNERS_DICT.get((card["fd_card"], card["fd_cowner"]))
+        query = [(UPDATE_OWNERSHIP, (rating, card["fd_rarity"], copies + 1, card["fd_cowner"], card_id))]
+        if await run_query(query, False) is not None:
+            updated = CACHE_OWNERS_DICT.get((card["fd_card"], card["fd_cowner"], card["fd_rarity"]))
             updated["fd_rating"] = rating
             updated["fd_dupes"] = copies + 1
             caption = "**You upgraded your card!**"
@@ -507,21 +649,39 @@ async def upgrade_card(card):
                     description = f"{desc}"
                 )
 
-            embed.add_field(name = "", value = f"Copies owned: {copies + 1}\n{get_card_rating(rating)}")
+            embed.add_field(name = "", value = f"Copies owned: {copies + 1}\n{stars}")
             embed.set_image(url = "attachment://card.png")
             embed.set_footer(text = f"Obtained: {display_date(card["fd_created"])}")
 
             return embed, file, caption
         else:
             return None, None, f"An error occured while trying to upgrade"
+        
+async def ascend_card(card, user):
+    bloomcension = user["fd_curr2"]
+
+    details = CACHE_CARDS_DICT.get(card["fd_card"])
+    filtered = [owned for owned in CACHE_OWNERS_LIST if owned["fd_card"] == card["fd_card"] 
+                and owned["fd_cowner"] == user["id"] and owned["fd_deleted"] is None]
+    if len(filtered) == 3:
+        return None, None, "You have already owned all the rarity tiers for this card"
+
+    if card["fd_rating"] != 5:
+        return None, None, "This is not a 5 star card!"
+    if bloomcension < 1:
+        return None, None, f"You don\'t have enough {constants.BLOOMCENSION} available."
+    else:
+        queries = []
+        rarity, rating = roll_ascend(user["fd_multi"])
+        if not await check_ascend_dupe(details["fd_type"], rating, rarity, user["id"]):
+            queries.append()
 
 async def update_user(details, field, value):
     details[field] = value
-    if await run_query(UPDATE_USER, (
-        details["fd_desc"], details["fd_curr1"], 
+    query = [(UPDATE_USER, (details["fd_desc"], details["fd_curr1"], 
         details["fd_curr2"], details["fd_curr3"], 
         details["fd_multi"], details["fd_fav"], 
-        details["fd_lock"], details["id"]), False
-    ) is None:
+        details["fd_lock"], details["id"]))]
+    if await run_query(query, False) is None:
         return False
     return True
