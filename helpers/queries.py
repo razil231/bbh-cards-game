@@ -25,6 +25,7 @@ INIT_TABLES = """
         fd_card INT NULL, 
         fd_display VARCHAR(8) NOT NULL, 
         fd_rating INT NOT NULL DEFAULT 0, 
+        fd_rarity VARCHAR(16) NULL, 
         fd_dupes INT NOT NULL DEFAULT 0, 
         fd_price INT NOT NULL DEFAULT 0, 
         fd_oowner VARCHAR(64) NULL, 
@@ -43,11 +44,11 @@ INIT_TABLES = """
 """
 
 ID_CHECK = "SELECT 1 FROM tb_owners WHERE fd_display = %s LIMIT 1" 
+ASCEND_CHECK = "SELECT 1 FROM tb_owners WHERE fd_card = %s AND fd_rating = %s AND fd_rarity = %s AND fd_cowner = %s LIMIT 1"
 GET_USERS = "SELECT * FROM tb_users" 
 GET_CARDS = "SELECT * FROM tb_cards"
 GET_OWNERS = "SELECT * FROM tb_owners"
 ADD_USER = "INSERT INTO tb_users(id, fd_name, fd_created) VALUES (%s, %s, %s)"
-ADD_OWNER = "INSERT INTO tb_owners(fd_card, fd_display, fd_dupes, fd_oowner, fd_cowner, fd_created) VALUES (%s, %s, 1, %s, %s, %s)"
-UPDATE_COPIES = "UPDATE tb_owners SET fd_dupes = %s WHERE fd_display = %s"
-UPGRADE_CARD = "UPDATE tb_owners SET fd_rating = %s, fd_dupes = %s WHERE fd_display = %s"
+ADD_OWNER = "INSERT INTO tb_owners(fd_card, fd_display, fd_rarity, fd_dupes, fd_oowner, fd_cowner, fd_created) VALUES (%s, %s, %s, 1, %s, %s, %s)"
+UPDATE_OWNERSHIP = "UPDATE tb_owners SET fd_rating = %s, fd_rarity = %s, fd_dupes = %s, fd_cowner = %s WHERE fd_display = %s"
 UPDATE_USER = "UPDATE tb_users SET fd_desc = %s, fd_curr1 = %s, fd_curr2 = %s, fd_curr3 = %s, fd_multi = %s, fd_fav = %s, fd_lock = %s WHERE id = %s"

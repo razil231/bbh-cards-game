@@ -2,8 +2,8 @@ import discord
 from discord.ui import View, Button
 
 class ConfirmView(View):
-    def __init__(self, author):
-        super().__init__(timeout = 15)
+    def __init__(self, author, timeout = 15):
+        super().__init__(timeout = timeout)
         self.value = None
         self.author = author
 

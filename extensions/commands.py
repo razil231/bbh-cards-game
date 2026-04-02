@@ -40,10 +40,28 @@ class CommandsCog(commands.Cog):
         if await helpers.util.check_user(ctx.author.id):
             await ctx.reply("You're already registered")
         else:
-            if await helpers.util.add_user(ctx.author):
-                await ctx.reply("Successfully registered! You can check with `profile` command")
+            view = ConfirmView(ctx.author, 180)
+            message = await ctx.reply(embed = helpers.util.get_start_embed(True), view = view)
+            await view.wait()
+
+            if view.value is None:
+                for child in view.children:
+                    child.disabled = True
+                return await ctx.reply("Timed out!")
+            elif view.value:
+                if await helpers.util.add_user(ctx.author):
+                    return await ctx.reply("Successfully registered! You can check with `profile` command")
+                else:
+                    return await ctx.reply("A problem was encountered during registration! Please try again later")
             else:
-                await ctx.reply("A problem was encountered during registration! Please try again later")
+                return await ctx.reply("Profile not registered")
+
+    @commands.hybrid_command(name = "info", description = "shows general information",
+                             extras = {"syntax": "`bc info`", "args": None})
+    async def info(self, ctx):
+        '''shows general information'''
+        embed = helpers.util.get_start_embed()
+        return await ctx.reply(embed = embed, mention_author = False)
 
     @commands.hybrid_command(name = "profile", description = "shows the profile of a user",
                              extras = {"syntax": "`bc profile [@user]`", "args": "- user: **optional**, user mention"})
@@ -80,7 +98,7 @@ class CommandsCog(commands.Cog):
             
             if helpers.util.roll_with_multi(user["fd_multi"]):
                 card = random.choice(helpers.util.CACHE_CARDS_SIGNED) if helpers.util.CACHE_CARDS_SIGNED else None
-                card_embed, card_image, caption = await helpers.util.generate_card_embed(card, user, True)
+                card_embed, card_image, caption = await helpers.util.generate_card_embed(card, user, signed = True)
             else:
                 card = random.choice(helpers.util.CACHE_CARDS_NORMAL) if helpers.util.CACHE_CARDS_NORMAL else None
                 card_embed, card_image, caption = await helpers.util.generate_card_embed(card, user)
@@ -113,7 +131,7 @@ class CommandsCog(commands.Cog):
     async def upgrade(self, ctx, card_id: str):
         '''upgrade a card to a higher rating'''
         if not await helpers.util.check_user(ctx.author.id):
-            await ctx.reply("New user detected! Please use `start` command.")
+            return await ctx.reply("New user detected! Please use `start` command.")
         else:
             if helpers.util.check_lock(ctx.author.id):
                 return await ctx.reply("**You\'re account has been locked! Please contact any game admin.**")
@@ -125,19 +143,52 @@ class CommandsCog(commands.Cog):
             if view.value is None:
                 for child in view.children:
                     child.disabled = True
-                    await message.edit(content = "Timed out!", view = None)
+                    return await message.edit(content = "Timed out!", view = None)
             elif view.value:
                 card = helpers.util.CACHE_CARDS_UPGRADE.get((card_id, str(ctx.author.id)))
                 if not card:
-                    await message.edit(content = "Card not found. Please check the card ID again", view = None)
+                    return await message.edit(content = "Card not found. Please check the card ID again", view = None)
                 else:
                     card_embed, card_image, caption = await helpers.util.upgrade_card(card)
                     if card_embed:
-                        await message.reply(content = f"{caption}", embed = card_embed, file = card_image, mention_author = False)
+                        return await message.reply(content = f"{caption}", embed = card_embed, file = card_image, mention_author = False)
                     else:
-                        await message.edit(content = f"{caption}", view = None)
+                        return await message.edit(content = f"{caption}", view = None)
             else:
-                await message.edit(content = "Upgrade cancelled", view = None)
+                return await message.edit(content = "Upgrade cancelled", view = None)
+
+    @commands.hybrid_command(name = "ascend" , description = "ascends a card to the next rarity",
+                             extras = {"syntax": "`bc ascend <card ID>`", "args": "- card ID: **required**, ID of the card"})
+    @commands.dynamic_cooldown(lambda ctx: helpers.util.get_cooldown(ctx, constants.CooldownCommand.ASCEND), commands.BucketType.user)
+    async def ascend(self, ctx, card_id: str):
+        '''ascends a card to the next rarity'''
+        if not await helpers.util.check_user(ctx.author.id):
+            return await ctx.reply("New user detected! Please use `start` command.")
+        else:
+            if helpers.util.check_lock(ctx.author.id):
+                return await ctx.reply("**You\'re account has been locked! Please contact any game admin.**")
+            
+            view = ConfirmView(ctx.author)
+            message = await ctx.reply(constants.CONFIRM_ASCEND.format(card_id), view = view)
+            await view.wait()
+
+            if view.value is None:
+                for child in view.children:
+                    child.disabled = True
+                    return await message.edit(content = "Timed out!", view = None)
+            elif view.value:
+                card = helpers.util.CACHE_CARDS_UPGRADE.get((card_id, str(ctx.author.id)))
+                user = helpers.util.CACHE_USERS_DICT.get(str(ctx.author.id))
+                if not card:
+                    return await message.edit(content = "Card not found. Please check the card ID again", view = None)
+                else:
+                    card_embed, card_image, caption = await helpers.util.ascend_card(card, user)
+                    if card_embed:
+                        return await message.reply(content = f"{caption}", embed = card_embed, file = card_image, mention_author = False)
+                    else:
+                        return await message.edit(content = f"{caption}", view = None)
+            else:
+                return await message.edit(content = "Ascend cancelled", view = None)
 
     @commands.hybrid_group(name = "set", description = "sets values to multiple things", with_app_command = True,
                            extras = {"syntax": "`bc set <field> <value>`", "args": "- field: **required**, field to set value\n- value: **required**, value to set"})
