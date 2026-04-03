@@ -39,6 +39,7 @@ async def on_ready():
     await init_db()
     await helpers.util.get_cards()
     await helpers.util.get_owners()
+    helpers.util.get_collections()
     print("Card bot online")
 
 @cardBot.event
@@ -108,6 +109,7 @@ async def reload_helpers(ctx):
             helpers.util.load_guilds()
             await helpers.util.get_cards()
             await helpers.util.get_owners()
+            helpers.util.get_collections()
             await ctx.reply("`Helpers reloaded`", mention_author = False)
         except Exception as e:
             await ctx.reply("`Exception caught!`", mention_author = False)
@@ -131,6 +133,7 @@ async def create_tables(ctx):
     await setup_db()
     await helpers.util.get_cards()
     await helpers.util.get_owners()
+    helpers.util.get_collections()
     await ctx.reply("`Initial tables created`")
     print("Commands: create_tables")
 
