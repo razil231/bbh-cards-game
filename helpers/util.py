@@ -12,6 +12,7 @@ import constants
 
 from datetime import datetime
 from discord.ext import commands
+from collections import defaultdict
 from PIL import Image
 from io import BytesIO
 from db import get_pool
@@ -232,7 +233,7 @@ def get_color(member):
 
 def get_card_rating(rating):
     stars = ""
-    rarity = ""
+    rarity = "basic"
 
     if rating > 5:
         if rating == 6:
@@ -253,17 +254,18 @@ def get_card_rating(rating):
     return stars, rarity
 
 def get_user_cards(user_id):
-    global CACHE_CARDS_COLLECTION
-    user = str(user_id)
+    # global CACHE_CARDS_COLLECTION
+    # user = str(user_id)
     
-    cards = CACHE_CARDS_COLLECTION.get(user)
-    if cards is not None:
-        return cards
+    # cards = CACHE_CARDS_COLLECTION.get(user)
+    # if cards is not None:
+    #     return cards
     
-    cards = [c for c in CACHE_OWNERS_LIST if c["fd_cowner"] == user]
-    CACHE_CARDS_COLLECTION[user] = cards
+    # cards = [c for c in CACHE_OWNERS_LIST if c["fd_cowner"] == user]
+    # CACHE_CARDS_COLLECTION[user] = cards
     
-    return cards
+    # return cards
+    return CACHE_CARDS_COLLECTION.get(str(user_id), [])
 
 def get_cooldown(ctx, command_enum: constants.CooldownCommand):
     base = BASE_COOLDOWNS[command_enum]
@@ -280,8 +282,8 @@ def get_cooldown(ctx, command_enum: constants.CooldownCommand):
     return commands.Cooldown(1, base)
 
 def card_list_embed(user, cards, page, total):
-    start = page * 10
-    end = start + 10
+    start = page * 9
+    end = start + 9
     pages = cards[start:end]
 
     embed = discord.Embed(
@@ -289,30 +291,29 @@ def card_list_embed(user, cards, page, total):
         description = f"{user.global_name}\'s cards:",
         color = 0xFF_FF_FF
     )
-    for i, card in enumerate(pages, start = start):
-        details = CACHE_CARDS_DICT.get(card["fd_card"])
-        if details["fd_type"] == "signed":
-            if card["fd_rarity"] == constants.RARITY[0]:
-                display = f"{constants.TYPE_SIGNED_RARE} **{details["fd_bundle"]}**: {details["fd_member"]}"
-            elif card["fd_rarity"] == constants.RARITY[1]:
-                display = f"{constants.TYPE_SIGNED_LEGENDARY} **{details["fd_bundle"]}**: {details["fd_member"]}"
-            elif card["fd_rarity"] == constants.RARITY[2]:
-                display = f"{constants.TYPE_SIGNED_ULTIMATE} **{details["fd_bundle"]}**: {details["fd_member"]}"
+    for _, card in enumerate(pages, start = start):
+        copies = card["o"]["fd_dupes"]
+        if card["c"]["fd_type"] == "signed":
+            if card["o"]["fd_rarity"] == constants.RARITY[0]:
+                display = f"{constants.TYPE_SIGNED_RARE} **{card["c"]["fd_bundle"]}**: {card["c"]["fd_member"]} - {copies} {"copies" if copies > 1 else "copy"}"
+            elif card["o"]["fd_rarity"] == constants.RARITY[1]:
+                display = f"{constants.TYPE_SIGNED_LEGENDARY} **{card["c"]["fd_bundle"]}**: {card["c"]["fd_member"]} - {copies} {"copies" if copies > 1 else "copy"}"
+            elif card["o"]["fd_rarity"] == constants.RARITY[2]:
+                display = f"{constants.TYPE_SIGNED_ULTIMATE} **{card["c"]["fd_bundle"]}**: {card["c"]["fd_member"]} - {copies} {"copies" if copies > 1 else "copy"}"
             else:
-                display = f"{constants.TYPE_SIGNED} **{details["fd_bundle"]}**: {details["fd_member"]}"
+                display = f"{constants.TYPE_SIGNED} **{card["c"]["fd_bundle"]}**: {card["c"]["fd_member"]} - {copies} {"copies" if copies > 1 else "copy"}"
         else:
-            if card["fd_rarity"] == constants.RARITY[0]:
-                display = f"{constants.TYPE_NORMAL_RARE} **{details["fd_bundle"]}**: {details["fd_member"]}"
-            elif card["fd_rarity"] == constants.RARITY[1]:
-                display = f"{constants.TYPE_NORMAL_LEGENDARY} **{details["fd_bundle"]}**: {details["fd_member"]}"
-            elif card["fd_rarity"] == constants.RARITY[2]:
-                display = f"{constants.TYPE_NORMAL_ULTIMATE} **{details["fd_bundle"]}**: {details["fd_member"]}"
+            if card["o"]["fd_rarity"] == constants.RARITY[0]:
+                display = f"{constants.TYPE_NORMAL_RARE} **{card["c"]["fd_bundle"]}**: {card["c"]["fd_member"]} - {copies} {"copies" if copies > 1 else "copy"}"
+            elif card["o"]["fd_rarity"] == constants.RARITY[1]:
+                display = f"{constants.TYPE_NORMAL_LEGENDARY} **{card["c"]["fd_bundle"]}**: {card["c"]["fd_member"]} - {copies} {"copies" if copies > 1 else "copy"}"
+            elif card["o"]["fd_rarity"] == constants.RARITY[2]:
+                display = f"{constants.TYPE_NORMAL_ULTIMATE} **{card["c"]["fd_bundle"]}**: {card["c"]["fd_member"]} - {copies} {"copies" if copies > 1 else "copy"}"
             else:
-                display = f"{constants.TYPE_NORMAL} **{details["fd_bundle"]}**: {details["fd_member"]}"
+                display = f"{constants.TYPE_NORMAL} **{card["c"]["fd_bundle"]}**: {card["c"]["fd_member"]} - {copies} {"copies" if copies > 1 else "copy"}"
         
-        embed.add_field(name = f"`{card["fd_display"]}`", value = f"{display}", inline = True)
-        if (i + 1) % 2 == 0:
-            embed.add_field(name = "", value = "", inline = False)
+        stars, _ = get_card_rating(card["o"]["fd_rating"])
+        embed.add_field(name = f"`{card["o"]['fd_display']}` - {stars}", value = f"{display}", inline = False)
 
     embed.set_footer(text = f"Page {page + 1}/{total}")
     return embed
@@ -322,6 +323,25 @@ def get_command_perms(ctx):
         return ""
     
     return ", `bloom`, `bloomcension`, `bloomspin`, `multi`, `lock`"
+
+def get_collections():
+    # global CACHE_CARDS_COLLECTION
+    # CACHE_CARDS_COLLECTION = defaultdict(list)
+    
+    # for ownership in CACHE_OWNERS_LIST:
+    #     user_id = str(ownership["fd_cowner"])
+    #     CACHE_CARDS_COLLECTION[user_id].append(ownership)
+    global CACHE_CARDS_COLLECTION
+    CACHE_CARDS_COLLECTION = defaultdict(list)
+
+    for ownership in CACHE_OWNERS_LIST:
+        card = CACHE_CARDS_DICT.get(ownership["fd_card"])
+        if not card:
+            continue
+
+        data = {"o": ownership, "c": card}
+        user = str(ownership["fd_cowner"])
+        CACHE_CARDS_COLLECTION[user].append(data)
 
 async def run_sql(path):
     pool = await get_pool()
@@ -426,11 +446,15 @@ async def add_ownership(card, card_id, user, date, rarity = "basic"):
     CACHE_OWNERS_LIST.append(new)
     CACHE_CARDS_UPGRADE[(card_id, str(user["id"]))] = new
 
-    collection = CACHE_CARDS_COLLECTION.get(str(user["id"]))
-    if collection is not None:
-        collection.append(new)
-    else:
-        CACHE_CARDS_COLLECTION[str(user["id"])] = [new]
+    # collection = CACHE_CARDS_COLLECTION.get(str(user["id"]))
+    # if collection is not None:
+    #     collection.append(new)
+    # else:
+    #     CACHE_CARDS_COLLECTION[str(user["id"])] = [new]
+
+    details = CACHE_CARDS_DICT.get(card)
+    data = {"o": new, "c": details}
+    CACHE_CARDS_COLLECTION.setdefault(str(user["id"]), []).append(data)
     
     query = [(ADD_OWNER, (card, card_id, rarity, str(user["id"]), str(user["id"]), date))]
     return await run_query(query, False) is not None
@@ -531,7 +555,7 @@ async def generate_card_embed(card, user, signed = False, rarity = "basic"):
         caption = "**You acquired a new card**"
         card_id = await generate_card_id()
         stars, rarity = get_card_rating(0)
-        await add_ownership(int(card["id"]), card_id, user, now)
+        await add_ownership(int(card["id"]), card_id, user, now, rarity)
 
     desc = f"{card['fd_bundle']}\n{card['fd_member']}\n{card['fd_type']}"
     if card["fd_desc"]:
@@ -554,12 +578,12 @@ async def generate_card_embed(card, user, signed = False, rarity = "basic"):
     embed.add_field(name = "", value = f"Copies owned: {copies}\n{stars}")
     embed.set_image(url = "attachment://card.png")
     embed.set_footer(text = f"Obtained: {display_date(now)}")
-
+    print(f"User {user["id"]} got a copy of {rarity}{" signed" if signed else ""} {card["fd_bundle"]} {card["fd_member"]}")
     return embed, file, caption
 
 async def get_profile_embed(user, details):
     embed = discord.Embed(
-        title = f"{user.display_name}\'s Profile",
+        title = f"{user.display_name}\'s Profile {'(🔒Locked)' if int(details["fd_lock"]) == 1 else ''}",
         description = details["fd_desc"] if details["fd_desc"] is not None else "",
         color = 0xFF_FF_FF
     )
@@ -579,50 +603,53 @@ async def get_profile_embed(user, details):
 
     embed.set_thumbnail(url = user.display_avatar.url)
     embed.set_footer(text = f"Created: {display_date(details["fd_created"])}")
-
+    
     return embed, image
 
 async def card_info_embed(card):
-    details = CACHE_CARDS_DICT.get(card["fd_card"])
-    desc = f"{details["fd_bundle"]}\n{details['fd_member']}\n{details['fd_type']}"
+    desc = f"{card["c"]["fd_bundle"]}\n{card["c"]['fd_member']}\n{card["c"]['fd_type']}"
 
-    stars, rarity = get_card_rating(card["fd_rating"])
-    file = await get_image_file(details["fd_image"], rarity)
+    stars, rarity = get_card_rating(card["o"]["fd_rating"])
+    file = await get_image_file(card["c"]["fd_image"], rarity)
 
-    if details["fd_desc"]:
-        desc += f"\n\n{details['fd_desc']}"
+    if card["c"]["fd_desc"]:
+        desc += f"\n\n{card["c"]['fd_desc']}"
 
-    if details["fd_type"] == "signed":
+    if card["c"]["fd_type"] == "signed":
         embed = discord.Embed(
-            title = f"Card ID: `{card["fd_display"]}`",
+            title = f"Card ID: `{card["o"]["fd_display"]}`",
             description = f"{desc}",
-            color = get_color(details["fd_member"])
+            color = get_color(card["c"]["fd_member"])
         )
     else:
         embed = discord.Embed(
-            title = f"Card ID: `{card["fd_display"]}`",
+            title = f"Card ID: `{card["o"]["fd_display"]}`",
             description = f"{desc}"
         )
         
-    embed.add_field(name = "", value = f"**Obtained by**: <@!{card["fd_oowner"]}>\n**Owned by**: <@!{card["fd_cowner"]}>")
-    embed.add_field(name = "", value = f"Copies owned: {card["fd_dupes"]}\n{stars}", inline = False)
+    embed.add_field(name = "", value = f"**Obtained by**: <@!{card["o"]["fd_oowner"]}>\n**Owned by**: <@!{card["o"]["fd_cowner"]}>")
+    embed.add_field(name = "", value = f"Copies owned: {card["o"]["fd_dupes"]}\n{stars}", inline = False)
     embed.set_image(url = "attachment://card.png")
-    embed.set_footer(text = f"Obtained: {display_date(card["fd_created"])}")
+    embed.set_footer(text = f"Obtained: {display_date(card["o"]["fd_created"])}")
     return embed, file
 
-async def upgrade_card(card):
+async def upgrade_card(card, stars):
     rating = card["fd_rating"]
     copies = card["fd_dupes"]
     card_id = card["fd_display"]
 
+    card_value = (2 ** rating) - 1
+    stars = stars if stars > 0 else rating + 1
+    print(f"Stars: {stars}")
+
     if rating >= 5:
         return None, None, "Card is already max upgraded!"
     
-    if copies < 2 ** (rating + 1):
-        return None, None, f"You don\'t have enough copies to upgrade this card. ({copies}/{2 ** (rating + 1)})"
+    if (card_value + copies) < 2 ** stars:
+        return None, None, f"You don\'t have enough copies to upgrade this card. ({card_value + copies}/{2 ** (stars)})"
     else:
-        rating += 1
-        copies -= (2 ** rating)
+        rating = stars
+        copies = copies - ((2 ** rating) - card_value)
         details = CACHE_CARDS_DICT.get(card["fd_card"])
         desc = f"{details["fd_bundle"]}\n{details['fd_member']}\n{details['fd_type']}"
         if details["fd_desc"]:

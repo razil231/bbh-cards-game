@@ -114,7 +114,7 @@ class CommandsCog(commands.Cog):
             return await ctx.reply(f"<@!{target.id}> is not registered")
         
         if helpers.util.check_lock(target.id):
-            return await ctx.reply("**You\'re account has been locked! Please contact any game admin.**")
+            return await ctx.reply("**This account has been locked! Please contact any game admin.**")
             
         user_cards = helpers.util.get_user_cards(target.id)
         if not user_cards:
@@ -128,8 +128,10 @@ class CommandsCog(commands.Cog):
     @commands.hybrid_command(name = "upgrade", description = "upgrade a card to a higher rating",
                              extras = {"syntax": "`bc upgrade <card_id>`", "args": "- card_id: **required**, ID of the card"})
     @commands.dynamic_cooldown(lambda ctx: helpers.util.get_cooldown(ctx, constants.CooldownCommand.UPGRADE), commands.BucketType.user)
-    async def upgrade(self, ctx, card_id: str):
+    async def upgrade(self, ctx, card_id: str, stars: int = -1):
         '''upgrade a card to a higher rating'''
+        if stars > 5:
+            return await ctx.reply("Can upgrade up to 5 stars only")
         if not await helpers.util.check_user(ctx.author.id):
             return await ctx.reply("New user detected! Please use `start` command.")
         else:
@@ -149,7 +151,7 @@ class CommandsCog(commands.Cog):
                 if not card:
                     return await message.edit(content = "Card not found. Please check the card ID again", view = None)
                 else:
-                    card_embed, card_image, caption = await helpers.util.upgrade_card(card)
+                    card_embed, card_image, caption = await helpers.util.upgrade_card(card, stars)
                     if card_embed:
                         return await message.reply(content = f"{caption}", embed = card_embed, file = card_image, mention_author = False)
                     else:
