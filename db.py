@@ -1,7 +1,9 @@
 import aiomysql
+import logging
 from helpers.queries import INIT_TABLES
 
 db_pool = None
+logger = logging.getLogger("bbh_cards")
 
 async def init_db():
     global db_pool
@@ -13,7 +15,7 @@ async def init_db():
         db = "cardtest",
         autocommit = False
     )
-
+    logger.info("Database initialization done")
     print("DB initialization done")
 
 async def get_pool():
@@ -25,5 +27,5 @@ async def setup_db():
     async with pool.acquire() as conn:
         async with conn.cursor() as cursor:
             await cursor.execute(INIT_TABLES)
-
+    logger.info("Database setup done")
     print("DB setup done")

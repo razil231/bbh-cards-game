@@ -8,6 +8,7 @@ import math
 import aiohttp
 import aiomysql
 import aiofiles
+import logging
 import constants
 
 from datetime import datetime
@@ -35,6 +36,8 @@ CACHE_IMAGES_MEMORY = {}
 CACHE_DIR = "cache/images"
 CACHE_MAX_MEMORY = 100
 CACHE_GUILDS = set()
+
+logger = logging.getLogger("bbh_cards")
 
 os.makedirs(CACHE_DIR, exist_ok = True)
 
@@ -384,6 +387,7 @@ async def run_query(queries, fetch = True):
                 else:
                     return results if len(results) > 1 else results[0]
             except Exception:
+                logger.exception("Exception: run_query")
                 print("run_query exception")
                 await conn.rollback()
                 raise
@@ -557,6 +561,7 @@ async def generate_card_embed(card, user, signed = False, rarity = "basic"):
     embed.add_field(name = "", value = f"Copies owned: {copies}\n{stars}")
     embed.set_image(url = "attachment://card.png")
     embed.set_footer(text = f"Obtained: {display_date(now)}")
+    logger.info(f"{now}: User {user["id"]} got a copy of {card_id} {rarity}{" signed" if signed else " normal"} {card["fd_bundle"]} {card["fd_member"]} - {copies} total")
     print(f"{now}: User {user["id"]} got a copy of {card_id} {rarity}{" signed" if signed else " normal"} {card["fd_bundle"]} {card["fd_member"]} - {copies} total")
     return embed, file, caption
 
@@ -625,7 +630,6 @@ async def upgrade_card(card, stars):
     card_value = (2 ** rating)
     total_value = card_value + (copies - 1)
     stars = stars if stars > 0 else rating + 1
-    print(f"Stars: {stars}")
 
     if rating >= 5:
         return None, None, "Card is already max upgraded!"
@@ -664,9 +668,11 @@ async def upgrade_card(card, stars):
             embed.add_field(name = "", value = f"Copies owned: {copies + 1}\n{stars}")
             embed.set_image(url = "attachment://card.png")
             embed.set_footer(text = f"Obtained: {display_date(card["fd_created"])}")
+            logger.info(f"User {card["fd_cowner"]} upgraded {card["fd_display"]} {details["fd_type"]} {details["fd_bundle"]} {details["fd_member"]} to {stars} stars")
             print(f"{datetime.now()}: User {card["fd_cowner"]} upgraded {card["fd_display"]} {details["fd_type"]} {details["fd_bundle"]} {details["fd_member"]} to {stars} stars")
             return embed, file, caption
         else:
+            logger.error(f"There was an issue after user {card["fd_cowner"]} tried to upgrade {from_rating} {card["fd_display"]} {details["fd_type"]} {details["fd_bundle"]} {details["fd_member"]} to {stars} stars")
             print(f"{datetime.now()}: ERROR: There was an issue after user {card["fd_cowner"]} tried to upgrade {from_rating} {card["fd_display"]} {details["fd_type"]} {details["fd_bundle"]} {details["fd_member"]} to {stars} stars")
             return None, None, f"An error occured while trying to upgrade"
         
@@ -725,9 +731,11 @@ async def ascend_card(card, user):
                 embed.add_field(name = "", value = f"Copies owned: 1\n{stars}")
                 embed.set_image(url = "attachment://card.png")
                 embed.set_footer(text = f"Obtained: {display_date(card["fd_created"])}")
+                logger.info(f"User {user["id"]} ascended {details["fd_type"]} {details["fd_bundle"]} {details["fd_member"]} to {rarity} tier")
                 print(f"{now}: User {user["id"]} ascended {details["fd_type"]} {details["fd_bundle"]} {details["fd_member"]} to {rarity} tier")
                 return embed, file, caption
             else:
+                logger.error(f"There was an issue while user {user["id"]} tried to ascend {details["fd_type"]} {details["fd_bundle"]} {details["fd_member"]}")
                 print(f"{now}: ERROR: There was an issue while user {user["id"]} tried to ascend {details["fd_type"]} {details["fd_bundle"]} {details["fd_member"]}")
                 return None, None, f"An error occured while trying to ascend"
         else:
