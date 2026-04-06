@@ -557,7 +557,7 @@ async def generate_card_embed(card, user, signed = False, rarity = "basic"):
     embed.add_field(name = "", value = f"Copies owned: {copies}\n{stars}")
     embed.set_image(url = "attachment://card.png")
     embed.set_footer(text = f"Obtained: {display_date(now)}")
-    print(f"User {user["id"]} got a copy of {rarity}{" signed" if signed else ""} {card["fd_bundle"]} {card["fd_member"]}")
+    print(f"{now}: User {user["id"]} got a copy of {card_id} {rarity}{" signed" if signed else " normal"} {card["fd_bundle"]} {card["fd_member"]} - {copies} total")
     return embed, file, caption
 
 async def get_profile_embed(user, details):
@@ -572,7 +572,7 @@ async def get_profile_embed(user, details):
 
     ascend = 10 * (1 + (details["fd_multi"]/100)) if details["fd_multi"] != 1 else 10
     boosts = f"- __**Signed**__: *{details['fd_multi']:.2f}%* chances\n"
-    boosts += f"- __**Ultimate**__ *{ascend:.2f}%* chances"
+    boosts += f"- __**Ultimate**__: *{ascend:.2f}%* chances"
 
     embed.add_field(name = "Boosts:", value = f"{boosts}", inline = False)
     embed.add_field(name = "Currency:", value = f"{curr}", inline = False)
@@ -617,6 +617,7 @@ async def card_info_embed(card):
     return embed, file
 
 async def upgrade_card(card, stars):
+    from_rating = card["fd_rating"]
     rating = card["fd_rating"]
     copies = card["fd_dupes"]
     card_id = card["fd_display"]
@@ -663,9 +664,10 @@ async def upgrade_card(card, stars):
             embed.add_field(name = "", value = f"Copies owned: {copies + 1}\n{stars}")
             embed.set_image(url = "attachment://card.png")
             embed.set_footer(text = f"Obtained: {display_date(card["fd_created"])}")
-
+            print(f"{datetime.now()}: User {card["fd_cowner"]} upgraded {card["fd_display"]} {details["fd_type"]} {details["fd_bundle"]} {details["fd_member"]} to {stars} stars")
             return embed, file, caption
         else:
+            print(f"{datetime.now()}: ERROR: There was an issue after user {card["fd_cowner"]} tried to upgrade {from_rating} {card["fd_display"]} {details["fd_type"]} {details["fd_bundle"]} {details["fd_member"]} to {stars} stars")
             return None, None, f"An error occured while trying to upgrade"
         
 async def ascend_card(card, user):
@@ -699,7 +701,7 @@ async def ascend_card(card, user):
                 )))
             queries.extend(add_ownership(int(details["id"]), new_card, user, now, rarity, rating))
             if await run_query(queries, False) is not None:
-                caption = "**You upgraded your card!**"
+                caption = f"**You ascended your card to __*{rarity}*__ tier!**"
                 desc = f"{details["fd_bundle"]}\n{details['fd_member']}\n{details['fd_type']}"
 
                 if details["fd_desc"]:
@@ -723,9 +725,10 @@ async def ascend_card(card, user):
                 embed.add_field(name = "", value = f"Copies owned: 1\n{stars}")
                 embed.set_image(url = "attachment://card.png")
                 embed.set_footer(text = f"Obtained: {display_date(card["fd_created"])}")
-
+                print(f"{now}: User {user["id"]} ascended {details["fd_type"]} {details["fd_bundle"]} {details["fd_member"]} to {rarity} tier")
                 return embed, file, caption
             else:
+                print(f"{now}: ERROR: There was an issue while user {user["id"]} tried to ascend {details["fd_type"]} {details["fd_bundle"]} {details["fd_member"]}")
                 return None, None, f"An error occured while trying to ascend"
         else:
             message = f"You already have {'an' if rarity == constants.RARITY[2] else 'a'} {rarity} tier of this card!\n"
