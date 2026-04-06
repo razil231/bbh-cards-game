@@ -6,6 +6,7 @@ PREFIX = "bc "
 ACTIVITY = "bc help"
 RARITY = ["rare", "legendary", "ultimate"]
 MAX_RATING = 8
+LOGGING_CHANNEL = 1485615805608497263
 
 ### ROLES ###
 BBH_ABSCBN = 1354787638254633040

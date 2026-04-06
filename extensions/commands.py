@@ -1,5 +1,6 @@
 import discord
 import random
+import logging
 import helpers.util
 import constants
 
@@ -8,6 +9,7 @@ from discord import app_commands
 from views.collection_view import CardView
 from views.confirm_view import ConfirmView
 
+logger = logging.getLogger("bbh_cards")
 
 class CommandsCog(commands.Cog):
     def __init__(self, bot):
@@ -247,8 +249,10 @@ class CommandsCog(commands.Cog):
         details = helpers.util.CACHE_USERS_DICT.get(str(user))
         total = details["fd_curr1"] + amount
         if not await helpers.util.update_user(details, "fd_curr1", total):
+            logger.error(f"Command: set bloom {user} {amount}")
             return await ctx.reply("An error occured while trying to update user")
         else:
+            logger.info(f"Command: set bloom {user} +{amount}")
             return await ctx.reply(f"Added {amount} {constants.BLOOM} to user {user}", mention_author = False)
 
     @set.command(name = "bloomcension", description = "adds bloomcension to a user", hidden = True,
@@ -264,8 +268,10 @@ class CommandsCog(commands.Cog):
         details = helpers.util.CACHE_USERS_DICT.get(str(user))
         total = details["fd_curr2"] + amount
         if not await helpers.util.update_user(details, "fd_curr2", total):
+            logger.error(f"Command: set bloomscension {user} {amount}")
             return await ctx.reply("An error occured while trying to update user")
         else:
+            logger.info(f"Command: set bloomscension {user} +{amount}")
             return await ctx.reply(f"Added {amount} {constants.BLOOMCENSION} to user {user}", mention_author = False)
 
     @set.command(name = "bloomspin", description = "adds bloomspin to a user", hidden = True,
@@ -281,8 +287,10 @@ class CommandsCog(commands.Cog):
         details = helpers.util.CACHE_USERS_DICT.get(str(user))
         total = details["fd_curr3"] + amount
         if not await helpers.util.update_user(details, "fd_curr3", total):
+            logger.error(f"Command: set bloomspin {user} {amount}")
             return await ctx.reply("An error occured while trying to update user")
         else:
+            logger.info(f"Command: set bloomspin {user} +{amount}")
             return await ctx.reply(f"Added {amount} {constants.BLOOMSPIN} to user {user}", mention_author = False)
 
     @set.command(name = "lock", description = "locks a user account from the bot", hidden = True,
@@ -297,9 +305,11 @@ class CommandsCog(commands.Cog):
         
         details = helpers.util.CACHE_USERS_DICT.get(str(user))
         if not await helpers.util.update_user(details, "fd_lock", value):
+            logger.error(f"Command: set lock {user} {value}")
             return await ctx.reply("An error occured while trying to update user")
         else:
-            return await ctx.reply(f"User {user} has been locked out of the bot!", mention_author = False)
+            logger.info(f"Command: set lock {user} {value}")
+            return await ctx.reply(f"User {user} account has been {'disabled' if value else 'enables'}!", mention_author = False)
         
     @set.command(name = "multi", description = "sets chance multiplier for a user", hidden = True,
                  extras = {"syntax": "`bc set multi <user ID> <multiplier>`", "args": "- user ID: **required**, discord user ID\n- multiplier: **required**, float, chances in rate form (`%` not included)"})
@@ -315,8 +325,10 @@ class CommandsCog(commands.Cog):
         multiplier = helpers.util.parse_multi(value)
         if multiplier is not None:
             if not await helpers.util.update_user(details, "fd_multi", multiplier):
+                logger.error(f"Command: set multi {user} {value}")
                 return await ctx.reply("An error occured while trying to update user")
             else:
+                logger.info(f"Command: set multi {user} {value}")
                 return await ctx.reply(f"User {user} multiplier has been set", mention_author = False)
         else:
             return await ctx.reply("Make sure the value is within 0 to 100")
