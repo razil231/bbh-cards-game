@@ -191,7 +191,7 @@ def roll_with_multi(multi):
 
 def roll_ascend(multi):
     multi = max(0, min(multi, 100))
-    additional = 1 + (multi / 100)
+    additional = 1 + (multi / 100) if multi != 1 else 1
 
     ultimate = 10 * additional
     legendary = 30
@@ -254,17 +254,6 @@ def get_card_rating(rating):
     return stars, rarity
 
 def get_user_cards(user_id):
-    # global CACHE_CARDS_COLLECTION
-    # user = str(user_id)
-    
-    # cards = CACHE_CARDS_COLLECTION.get(user)
-    # if cards is not None:
-    #     return cards
-    
-    # cards = [c for c in CACHE_OWNERS_LIST if c["fd_cowner"] == user]
-    # CACHE_CARDS_COLLECTION[user] = cards
-    
-    # return cards
     return CACHE_CARDS_COLLECTION.get(str(user_id), [])
 
 def get_cooldown(ctx, command_enum: constants.CooldownCommand):
@@ -325,12 +314,6 @@ def get_command_perms(ctx):
     return ", `bloom`, `bloomcension`, `bloomspin`, `multi`, `lock`"
 
 def get_collections():
-    # global CACHE_CARDS_COLLECTION
-    # CACHE_CARDS_COLLECTION = defaultdict(list)
-    
-    # for ownership in CACHE_OWNERS_LIST:
-    #     user_id = str(ownership["fd_cowner"])
-    #     CACHE_CARDS_COLLECTION[user_id].append(ownership)
     global CACHE_CARDS_COLLECTION
     CACHE_CARDS_COLLECTION = defaultdict(list)
 
@@ -342,6 +325,30 @@ def get_collections():
         data = {"o": ownership, "c": card}
         user = str(ownership["fd_cowner"])
         CACHE_CARDS_COLLECTION[user].append(data)
+
+def add_ownership(card, card_id, user, date, rarity, rating):
+    global CACHE_OWNERS_DICT, CACHE_OWNERS_LIST, CACHE_CARDS_COLLECTION
+    new = {
+        "fd_card": card,
+        "fd_display": card_id,
+        "fd_rating": rating,
+        "fd_rarity": rarity,
+        "fd_dupes": 1,
+        "fd_oowner": str(user["id"]),
+        "fd_cowner": str(user["id"]),
+        "fd_created": date,
+        "fd_deleted": None
+    }
+    CACHE_OWNERS_DICT[(card, str(user["id"]), rarity)] = new
+    CACHE_OWNERS_LIST.append(new)
+    CACHE_CARDS_UPGRADE[(card_id, str(user["id"]))] = new
+
+    details = CACHE_CARDS_DICT.get(card)
+    data = {"o": new, "c": details}
+    CACHE_CARDS_COLLECTION.setdefault(str(user["id"]), []).append(data)
+    
+    query = [(ADD_OWNER, (card, card_id, rating, rarity, str(user["id"]), str(user["id"]), date))]
+    return query
 
 async def run_sql(path):
     pool = await get_pool()
@@ -430,35 +437,6 @@ async def add_user(user):
     query = [(ADD_USER, (user.id, user.name, datetime.now()))]
     return await run_query(query, False) is not None
 
-async def add_ownership(card, card_id, user, date, rarity = "basic"):
-    global CACHE_OWNERS_DICT, CACHE_OWNERS_LIST, CACHE_CARDS_COLLECTION
-    new = {
-        "fd_card": card,
-        "fd_display": card_id,
-        "fd_rating": 0,
-        "fd_rarity": rarity,
-        "fd_dupes": 1,
-        "fd_oowner": str(user["id"]),
-        "fd_cowner": str(user["id"]),
-        "fd_created": date
-    }
-    CACHE_OWNERS_DICT[(card, str(user["id"]), rarity)] = new
-    CACHE_OWNERS_LIST.append(new)
-    CACHE_CARDS_UPGRADE[(card_id, str(user["id"]))] = new
-
-    # collection = CACHE_CARDS_COLLECTION.get(str(user["id"]))
-    # if collection is not None:
-    #     collection.append(new)
-    # else:
-    #     CACHE_CARDS_COLLECTION[str(user["id"])] = [new]
-
-    details = CACHE_CARDS_DICT.get(card)
-    data = {"o": new, "c": details}
-    CACHE_CARDS_COLLECTION.setdefault(str(user["id"]), []).append(data)
-    
-    query = [(ADD_OWNER, (card, card_id, rarity, str(user["id"]), str(user["id"]), date))]
-    return await run_query(query, False) is not None
-
 async def generate_card_id(length = 8):
     chars = string.ascii_uppercase + string.digits
     pool = await get_pool()
@@ -483,9 +461,9 @@ async def get_image(url, rarity, max = (800, 800)):
     if rarity == constants.RARITY[0]:
         overlay = Image.open("images/overlay_rare.png").convert("RGBA")
     elif rarity == constants.RARITY[1]:
-        overlay = Image.open("images/overlay_rare.png").convert("RGBA")
+        overlay = Image.open("images/overlay_legendary.png").convert("RGBA")
     elif rarity == constants.RARITY[2]:
-        overlay = Image.open("images/overlay_rare.png").convert("RGBA")
+        overlay = Image.open("images/overlay_ultimate.png").convert("RGBA")
     else:
         overlay = None
 
@@ -555,7 +533,8 @@ async def generate_card_embed(card, user, signed = False, rarity = "basic"):
         caption = "**You acquired a new card**"
         card_id = await generate_card_id()
         stars, rarity = get_card_rating(0)
-        await add_ownership(int(card["id"]), card_id, user, now, rarity)
+        query = add_ownership(int(card["id"]), card_id, user, now, rarity, 0)
+        await run_query(query, False)
 
     desc = f"{card['fd_bundle']}\n{card['fd_member']}\n{card['fd_type']}"
     if card["fd_desc"]:
@@ -591,7 +570,11 @@ async def get_profile_embed(user, details):
     curr += f"- {details["fd_curr2"]} {constants.BLOOMCENSION}\n"
     curr += f"- {details["fd_curr3"]} {constants.BLOOMSPIN}"
 
-    embed.add_field(name = "Boosts:", value = f"- __**Signed**__: *{details['fd_multi']:.2f}%* chances", inline = False)
+    ascend = 10 * (1 + (details["fd_multi"]/100)) if details["fd_multi"] != 1 else 10
+    boosts = f"- __**Signed**__: *{details['fd_multi']:.2f}%* chances\n"
+    boosts += f"- __**Ultimate**__ *{ascend:.2f}%* chances"
+
+    embed.add_field(name = "Boosts:", value = f"{boosts}", inline = False)
     embed.add_field(name = "Currency:", value = f"{curr}", inline = False)
 
     if details["fd_fav"] is not None:
@@ -638,15 +621,16 @@ async def upgrade_card(card, stars):
     copies = card["fd_dupes"]
     card_id = card["fd_display"]
 
-    card_value = (2 ** rating) - 1
+    card_value = (2 ** rating)
+    total_value = card_value + (copies - 1)
     stars = stars if stars > 0 else rating + 1
     print(f"Stars: {stars}")
 
     if rating >= 5:
         return None, None, "Card is already max upgraded!"
     
-    if (card_value + copies) < 2 ** stars:
-        return None, None, f"You don\'t have enough copies to upgrade this card. ({card_value + copies}/{2 ** (stars)})"
+    if total_value < 2 ** stars:
+        return None, None, f"You don\'t have enough copies to upgrade this card. ({total_value}/{2 ** (stars)})"
     else:
         rating = stars
         copies = copies - ((2 ** rating) - card_value)
@@ -690,18 +674,63 @@ async def ascend_card(card, user):
     details = CACHE_CARDS_DICT.get(card["fd_card"])
     filtered = [owned for owned in CACHE_OWNERS_LIST if owned["fd_card"] == card["fd_card"] 
                 and owned["fd_cowner"] == user["id"] and owned["fd_deleted"] is None]
-    if len(filtered) == 3:
+    if len(filtered) == 4:
         return None, None, "You have already owned all the rarity tiers for this card"
 
-    if card["fd_rating"] != 5:
+    if card["fd_rating"] < 5:
         return None, None, "This is not a 5 star card!"
+    elif card["fd_rating"] > 5:
+        return None, None, "This card is ascended already!"
+    
     if bloomcension < 1:
         return None, None, f"You don\'t have enough {constants.BLOOMCENSION} available."
     else:
         queries = []
         rarity, rating = roll_ascend(user["fd_multi"])
-        if not await check_ascend_dupe(details["fd_type"], rating, rarity, user["id"]):
-            queries.append()
+        if not await check_ascend_dupe(details["id"], rating, rarity, user["id"]):
+            copies = card["fd_dupes"] - 1
+            user["fd_curr2"] = bloomcension - 1
+            queries.append((UPDATE_OWNERSHIP, (5, "basic", copies, str(user["id"]), card["fd_display"])))
+            new_card = await generate_card_id()
+            now = datetime.now()
+            queries.append((UPDATE_USER, (
+                user["fd_desc"], user["fd_curr1"], user["fd_curr2"], user["fd_curr3"], 
+                user["fd_multi"], user["fd_fav"], user["fd_lock"], str(user["id"])
+                )))
+            queries.extend(add_ownership(int(details["id"]), new_card, user, now, rarity, rating))
+            if await run_query(queries, False) is not None:
+                caption = "**You upgraded your card!**"
+                desc = f"{details["fd_bundle"]}\n{details['fd_member']}\n{details['fd_type']}"
+
+                if details["fd_desc"]:
+                    desc += f"\n\n{details['fd_desc']}"
+
+                stars, _ = get_card_rating(rating)
+                file = await get_image_file(details["fd_image"], rarity)
+
+                if details["fd_type"] == "signed":
+                    embed = discord.Embed(
+                        title = f"Card ID: `{new_card}`",
+                        description = f"{desc}",
+                        color = get_color(details["fd_member"])
+                    )
+                else:
+                    embed = discord.Embed(
+                        title = f"Card ID: `{new_card}`",
+                        description = f"{desc}"
+                    )
+
+                embed.add_field(name = "", value = f"Copies owned: 1\n{stars}")
+                embed.set_image(url = "attachment://card.png")
+                embed.set_footer(text = f"Obtained: {display_date(card["fd_created"])}")
+
+                return embed, file, caption
+            else:
+                return None, None, f"An error occured while trying to ascend"
+        else:
+            message = f"You already have {'an' if rarity == constants.RARITY[2] else 'a'} {rarity} tier of this card!\n"
+            message += f"-# Your bloomscension {constants.BLOOMCENSION} has been reimbursed but your cooldown is spent"
+            return None, None, f"{message}"
 
 async def update_user(details, field, value):
     details[field] = value
