@@ -1,6 +1,7 @@
 import discord
 import os
 import importlib
+import time
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -46,17 +47,8 @@ async def on_ready():
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandOnCooldown):
         retry = error.retry_after
-
-        hours = int(retry // 3_600)
-        mins = int((retry % 3_600) // 60)
-        secs = int(retry % 60)
-
-        parts = []
-        if hours: parts.append(f"{hours:02}:")
-        if mins: parts.append(f"{mins:02}:")
-        parts.append(f"{secs:02}s")
-
-        await ctx.reply(f"Command on cooldown. Try again in {"".join(parts)}")
+        ts = int(time.time() + retry)
+        await ctx.reply(f"Command on cooldown. Try again in <t:{ts}:R>")
     elif isinstance(error, commands.CommandNotFound):
         await ctx.reply("`Not a command`", mention_author = False)
     elif isinstance(error, commands.MissingRequiredArgument):
