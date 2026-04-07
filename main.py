@@ -35,10 +35,8 @@ async def on_ready():
         try:
             await cardBot.load_extension(ext)
             logger.info(f"Loaded {ext}")
-            print(f"Loaded {ext}")
         except Exception as e:
             logger.exception(f"Failed to load {ext}")
-            print(f"Failed to load {ext}: {e}")
 
     helpers.util.load_guilds()
     await init_db()
@@ -46,7 +44,6 @@ async def on_ready():
     await helpers.util.get_owners()
     helpers.util.get_collections()
     logger.info("Card bot online")
-    print("Card bot online")
 
 @cardBot.event
 async def on_command_error(ctx, error):
@@ -63,7 +60,6 @@ async def on_command_error(ctx, error):
     else:
         await ctx.reply("`Exception caught!`", mention_author = False)
         logger.error(f"{error}")
-        print(f"Exception: {error}")
 ### ---------------------- BOT EVENTS END ---------------------- ###
 
 ### -------------------- BOT COMMANDS START -------------------- ###
@@ -75,7 +71,6 @@ async def sync(ctx):
     else:
         await ctx.reply("`Missing permissions`", mention_author = False)
     logger.info("Command: sync")
-    print("Command: sync")
 
 @cardBot.command(hidden = True)
 async def reload_extension(ctx, extension):
@@ -93,11 +88,9 @@ async def reload_extension(ctx, extension):
         except Exception as e:
             await ctx.reply("`Exception caught!`", mention_author = False)
             logger.exception("Exception: reload_extension command")
-            print(f"Exception: {e}")
     else:
         await ctx.reply("`Missing permissions`", mention_author = False)
     logger.info("Command: reload_extension")
-    print("Command: reload_extension")
 
 @cardBot.command(hidden = True)
 async def reload_helpers(ctx):
@@ -118,11 +111,9 @@ async def reload_helpers(ctx):
         except Exception as e:
             await ctx.reply("`Exception caught!`", mention_author = False)
             logger.exception("Exception: reload_helpers command")
-            print(f"Exception: {e}")
     else:
         await ctx.reply("`Missing permissions`", mention_author = False)
     logger.info("Command: reload_helpers")
-    print("Command: reload_helpers")
 
 @cardBot.command(hidden = True)
 async def sql_run(ctx, filepath):
@@ -133,7 +124,6 @@ async def sql_run(ctx, filepath):
     else:
         await ctx.reply("`Missing permissions`", mention_author = False)
     logger.info("Command: sql_run")
-    print("Command: sql_run")
 
 @cardBot.command(hidden = True)
 @commands.is_owner()
@@ -144,7 +134,6 @@ async def create_tables(ctx):
     helpers.util.get_collections()
     await ctx.reply("`Initial tables created`")
     logger.info("Commands: create_tables")
-    print("Commands: create_tables")
 
 @cardBot.command(hidden = True)
 @commands.is_owner()
@@ -154,7 +143,6 @@ async def close_db(ctx):
         pool.close()
         await pool.wait_closed()
         logger.info("Database connection closed")
-        print("DB connection closed")
     await ctx.reply("`DB connection closed`", mention_author = False)
 
 @cardBot.command(hidden = True)
